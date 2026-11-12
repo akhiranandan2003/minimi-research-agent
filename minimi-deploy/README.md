@@ -1,6 +1,6 @@
 # Minimi Research Agent
 
-A conversational research assistant with exactly one external tool: Tavily web search.
+A conversational research assistant with one model-visible external tool: **Tavily web search**. The React client, Node API, Supabase conversation memory, and tests are in this folder.
 
 ## Requirements
 
@@ -9,80 +9,35 @@ A conversational research assistant with exactly one external tool: Tavily web s
 - Tavily API key
 - Supabase project
 
-## Setup
+## Run locally
 
-1. Copy `.env.example` to `.env` in the project root.
-2. Fill in `OPENAI_API_KEY`, `TAVILY_API_KEY`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY`.
-3. In Supabase Dashboard → SQL Editor, run `supabase/schema.sql`.
-4. In Supabase Dashboard → API Settings, ensure the `public` schema is exposed to the Data API (new tables are not exposed automatically on current projects). RLS is enabled and no anon/authenticated policies are added; the Node API uses the server-only key.
-5. From the project root run:
-
-   ```bash
-   npm install
-   npm run dev
-   ```
-
-6. Open the Vite URL printed in the terminal (normally `http://localhost:5173`). The API runs on `http://localhost:3001`.
+1. From this folder, copy .env.example to .env and fill in OPENAI_API_KEY, TAVILY_API_KEY, SUPABASE_URL, and SUPABASE_SERVICE_ROLE_KEY.
+2. In Supabase Dashboard → SQL Editor, run supabase/schema.sql. Ensure the public schema is exposed to the Data API. RLS is enabled and no anon/authenticated policies are created; the Node API uses the server-side key.
+3. From this folder run npm install and npm run dev.
+4. Open http://localhost:5173. The API runs on http://localhost:3001.
 
 ## Tests and build
 
-```bash
-npm test
-npm run build
-```
+Run npm test and npm run build from this folder.
 
-## Security notes
+## Memory and research behavior
 
-- Keep `.env` private. Never paste the Supabase server-side key into frontend code or any `VITE_` variable.
-- The random conversation UUID is a demo access handle, not account authentication. Add Supabase Auth and ownership policies before production use.
-- Web snippets are untrusted input. The system prompt explicitly prevents retrieved page text from overriding application instructions.
-- The agent is allowed one external tool only: `web_search` (Tavily).
+- Recent conversation messages are loaded from the database for each turn.
+- Historical questions also trigger full-text search over older messages in the same conversation. Only actual stored user/assistant rows are supplied as memory; if the requested detail is not present, Minimi must say so.
+- History-only questions do not invoke web search. Change-over-time questions use prior context and dated web evidence, compare like-for-like measures, and state uncertainty when dates or scope do not match.
+- Search citations are numbered, de-duplicated, restricted to HTTP(S) URLs, and checked against the source list before saving the answer.
+- Retrieved web content is untrusted evidence. It cannot change the agent's instructions or authorize other tools.
 
-## Current scope
+## Deploy (GitHub + Render + Vercel)
 
-This is the first working slice: chat UI, API, bounded tool-calling loop, durable message writes/reads, source links, and focused unit tests. Conversation history currently loads the latest 40 messages; semantic retrieval, streaming, authentication, and deployment are planned follow-ups.
+The repository currently contains this project in minimi-deploy/.
 
+1. **Render API:** create a Blueprint from minimi-deploy/render.yaml. The service root is minimi-deploy/server. Add OPENAI_API_KEY, TAVILY_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and CLIENT_ORIGIN in Render. Set CLIENT_ORIGIN to the exact Vercel website origin after deploying the frontend.
+2. **Vercel frontend:** import the repository and set Root Directory to minimi-deploy/client, framework to Vite, build command to npm run build, and output directory to dist. Set VITE_API_BASE_URL to the Render API URL (no trailing slash).
+3. Open https://YOUR-API-URL/api/health; after the four server secrets are set it should report status ok. Send a chat message, refresh, and verify that history is restored.
 
-## Deploy online (GitHub + Render + Vercel)
+## Security limitations
 
-This project has a separate Express API and Vite frontend, so deploy them as two services.
-
-### 1. Push to GitHub
-
-Create a **public** empty repository named `minimi-research-agent` (do not add a README, license, or .gitignore). In PowerShell, from the extracted project folder run:
-
-```powershell
-git init
-git add .
-git commit -m "Initial Minimi research agent"
-git branch -M main
-git remote add origin https://github.com/YOUR_GITHUB_USERNAME/minimi-research-agent.git
-git push -u origin main
-```
-
-Never commit `.env`; `.gitignore` excludes it.
-
-### 2. Deploy the API on Render
-
-1. Sign in to Render → **New → Blueprint**.
-2. Connect the repository and select `render.yaml`.
-3. Create the `minimi-api` web service.
-4. Add `OPENAI_API_KEY`, `TAVILY_API_KEY`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` in the Render Environment settings.
-5. Set `CLIENT_ORIGIN` temporarily to `http://localhost:5173`; after Vercel deployment, replace it with the Vercel frontend origin.
-6. Copy the deployed API URL (for example `https://minimi-api.onrender.com`).
-
-### 3. Deploy the frontend on Vercel
-
-1. Sign in to Vercel → **Add New → Project**.
-2. Import the same GitHub repository.
-3. Set **Root Directory** to `client`; framework preset **Vite**; build command `npm run build`; output directory `dist`.
-4. Add `VITE_API_BASE_URL` with the Render API URL (no trailing slash).
-5. Deploy. Copy the Vercel website origin, then update Render's `CLIENT_ORIGIN` to that exact origin and redeploy the API.
-
-### 4. Verify
-
-- Open `https://YOUR-API-URL/api/health`. It should return `status: "ok"` after all API secrets are configured.
-- Open the Vercel website and send a test message.
-- Refresh and confirm the conversation history is still present.
-
-**Secrets:** Put the four server keys only in Render, never in frontend variables. Only `VITE_API_BASE_URL` belongs in Vercel. The demo uses UUID conversation handles, not production authentication; add Supabase Auth and ownership policies before storing sensitive conversations.
+- Never commit .env. Only VITE_API_BASE_URL belongs in Vercel; never expose the OpenAI, Tavily, or Supabase server-side key in a VITE_ variable.
+- The random conversation UUID is a demo access handle, not user authentication. Add Supabase Auth and per-user ownership policies before storing sensitive conversations or using this with multiple users.
+- The model has exactly one external tool: web_search. OpenAI and Supabase are the model/database services, not additional model tools.
