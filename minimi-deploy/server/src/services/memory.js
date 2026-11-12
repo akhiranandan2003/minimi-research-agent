@@ -3,9 +3,9 @@ import { queryConversationHistory } from './memory-query.js';
 
 export { toModelHistory } from './memory-query.js';
 
-// Keep the database records as the source of truth. Never fabricate missing history.
-export async function getConversationHistory(conversationId, limit = 40) {
-  return queryConversationHistory(getSupabase(), conversationId, limit);
+// Database rows are the only source of conversational memory.
+export async function getConversationHistory(conversationId, limit = 40, question = '') {
+  return queryConversationHistory(getSupabase(), conversationId, limit, question);
 }
 
 export async function saveMessage({ conversationId, role, content, metadata = {} }) {
