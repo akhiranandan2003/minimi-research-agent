@@ -2,26 +2,26 @@
 
 ## Architecture
 
-A React + Vite single-page chat client calls a Node.js + Express API. The API is the trust boundary: it validates requests, loads actual prior messages from Supabase PostgreSQL, invokes OpenAI's Responses API, executes the one allowed external tool (Tavily web search), and persists the resulting assistant message and source metadata. The browser never receives provider or database secrets. Each conversation is identified by a random UUID; this is a demo conversation handle, not user authentication.
+A React + Vite chat client calls a Node.js + Express API. The API validates requests, retrieves real conversation rows from Supabase PostgreSQL, calls OpenAI's Responses API, executes one model-visible external tool (web_search, backed by Tavily), and stores the assistant answer plus source metadata. Provider and database secrets remain on the server. Conversation UUIDs are demo handles, not authentication.
 
-## Why this design
+## Key decisions
 
-- **React + Vite:** small, familiar client with fast local development and a single `npm run dev` command.
-- **Express on Node:** keeps secrets and tool execution server-side and makes request validation/error handling explicit.
-- **OpenAI Responses API:** supports structured function calling; the app exposes exactly one function, `web_search`.
-- **Tavily:** dedicated search provider; results are treated as untrusted evidence and passed back to the model with prompt-injection warnings.
-- **Supabase PostgreSQL:** durable, queryable message history. The server retrieves stored messages before answering historical questions instead of fabricating memory.
+- **React + Vite:** a small client and a single local npm run dev command.
+- **Express + Node:** keeps secrets and search execution server-side; request validation and bounded tool loops are explicit.
+- **OpenAI Responses API:** structured function calling without an agent framework obscuring the one-tool constraint.
+- **Tavily:** the only external tool exposed to the model. Search results are untrusted evidence, never instructions.
+- **Supabase PostgreSQL:** durable, inspectable message history; conversation/time and full-text indexes support recent context and older topic-matching messages.
 
-## Memory, citations, and temporal questions
+## Memory, citations, and time comparisons
 
-The API loads the most recent 40 stored messages in chronological order. Historical questions are answered only from those records; missing details must be acknowledged. Temporal questions are instructed to identify relevant prior facts, search for dated evidence, compare like-for-like metrics/units/geographies, cite sources, and disclose uncertainty. Search sources are de-duplicated and returned to the UI as clickable links.
+For each turn, the API loads recent messages plus up to 30 older messages matching important query terms, always filtered to the same conversation. These are actual database rows, ordered chronologically; no synthetic memory is created. Historical-only questions are not allowed to invoke web search. Temporal comparisons use relevant prior context and dated web sources, compare like-for-like metrics, units, geography, population, and scope, and disclose uncertainty. Citation numbers are checked against returned HTTP(S) sources before the answer is saved.
 
 ## Alternatives considered
 
-- **OpenAI hosted web search:** simpler, but Tavily was selected to satisfy the requested explicit external-search integration and keep the tool boundary visible in the code.
-- **Vector database / embeddings:** deferred. A bounded chronological history is simpler and auditable for this challenge; semantic retrieval can be added after relevance tests show it is needed.
-- **Agent framework:** deferred in favor of a small explicit tool loop so the single-tool constraint and error paths are easy to inspect.
+- **OpenAI hosted search:** simpler, but Tavily makes the single external tool explicit and independently testable.
+- **Vector database / embeddings:** deferred; PostgreSQL full-text retrieval is cheaper, auditable, and sufficient for this first memory slice.
+- **Agent framework:** deferred; a bounded explicit tool loop is easier to inspect and test.
 
 ## What another week would improve
 
-Add Supabase Auth and per-user conversation ownership/RLS; implement relevance-ranked memory retrieval with exact message references; add robust date-aware extraction and structured comparison tables; stream tokens; add retries, rate limits, request tracing, evaluation fixtures, and end-to-end tests; improve accessibility and mobile UI; add CI and deploy only after secrets and RLS are reviewed.
+Add Supabase Auth and per-user ownership/RLS before production use; add relevance scoring and message-level memory citations; stream responses; add rate limits, tracing, end-to-end tests and CI; and improve mobile accessibility. Evaluate date extraction and temporal comparisons against a fixed benchmark before expanding agent behavior.
