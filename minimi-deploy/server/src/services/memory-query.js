@@ -1,19 +1,57 @@
-// Isolated query helper makes the database retrieval contract testable without a live Supabase project.
-export async function queryConversationHistory(supabase, conversationId, limit = 40) {
-  const { data, error } = await supabase
+import { buildHistorySearchQuery } from '../agent/logic.js';
+
+const HISTORY_COLUMNS = 'id, role, content, created_at, metadata';
+
+function stableMessageKey(record) {
+  return record.id ?? `${record.created_at || ''}:${record.role || ''}:${record.content || ''}`;
+}
+
+function chronological(records) {
+  return [...records].sort((left, right) => {
+    const leftTime = Date.parse(left.created_at || '') || 0;
+    const rightTime = Date.parse(right.created_at || '') || 0;
+    return leftTime - rightTime;
+  });
+}
+
+// Always constrain both reads to the requested conversation. The full-text pass
+// retrieves older matching messages; the recent pass preserves nearby context.
+export async function queryConversationHistory(supabase, conversationId, limit = 40, question = '') {
+  const recentResult = await supabase
     .from('messages')
-    .select('role, content, created_at, metadata')
+    .select(HISTORY_COLUMNS)
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  if (error) throw new Error(`Could not retrieve conversation history: ${error.message}`);
-  return (data || []).reverse();
+  if (recentResult.error) throw new Error(`Could not retrieve conversation history: ${recentResult.error.message}`);
+
+  const combined = [...(recentResult.data || [])];
+  const searchQuery = buildHistorySearchQuery(question);
+  if (searchQuery) {
+    const relevantResult = await supabase
+      .from('messages')
+      .select(HISTORY_COLUMNS)
+      .eq('conversation_id', conversationId)
+      .textSearch('content', searchQuery, { type: 'websearch', config: 'english' })
+      .order('created_at', { ascending: false })
+      .limit(30);
+
+    if (relevantResult.error) {
+      // Recent history remains useful if full-text retrieval is unavailable.
+      console.warn('[memory] Full-text history lookup failed:', relevantResult.error.message);
+    } else {
+      combined.push(...(relevantResult.data || []));
+    }
+  }
+
+  const unique = new Map();
+  for (const record of combined) unique.set(stableMessageKey(record), record);
+  return chronological([...unique.values()]).slice(-70);
 }
 
 export function toModelHistory(records = []) {
-  return [...records]
-    .reverse()
+  return chronological(records)
     .filter((record) => record && ['user', 'assistant'].includes(record.role) && typeof record.content === 'string')
     .map((record) => ({ role: record.role, content: record.content }));
 }
