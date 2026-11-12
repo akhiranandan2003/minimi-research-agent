@@ -21,6 +21,8 @@ const chatSchema = z.object({
   message: z.string().trim().min(1).max(6000),
 });
 
+app.get('/api/ping', (_req, res) => res.json({ status: 'ok' }));
+
 app.get('/api/health', (_req, res) => {
   const missing = missingServerConfig();
   res.status(missing.length ? 503 : 200).json({
@@ -62,7 +64,7 @@ app.post('/api/chat', async (req, res) => {
     console.error('[chat]', error);
     const message = error?.message || 'Unexpected server error.';
     const status = /missing|not configured/i.test(message) ? 503 : 500;
-    return res.status(status).json({ error: message });
+    return res.status(status).json({ error: status === 503 ? message : 'The assistant could not complete that request. Please try again.' });
   }
 });
 
