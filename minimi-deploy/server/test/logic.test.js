@@ -37,9 +37,13 @@ test('history-only questions do not trigger a temporal web comparison', () => {
   assert.equal(isTemporalComparisonQuestion('What did I tell you earlier about my target weight?'), false);
 });
 
-test('temporal comparison requests are detected', () => {
+test('temporal comparison requests are detected across common date and versus phrasings', () => {
   assert.equal(isTemporalComparisonQuestion('Compare the price then and now'), true);
   assert.equal(isTemporalComparisonQuestion('How has the price changed since 2024?'), true);
+  assert.equal(isTemporalComparisonQuestion('What was inflation in 2020 vs today?'), true);
+  assert.equal(isTemporalComparisonQuestion('What was the rate today versus 2020?'), true);
+  assert.equal(isTemporalComparisonQuestion('How did prices differ between 2019 and 2024?'), true);
+  assert.equal(isTemporalComparisonQuestion('What did I tell you earlier about my target weight?'), false);
   assert.equal(isTemporalComparisonQuestion('What is a closure in JavaScript?'), false);
 });
 
