@@ -4,7 +4,7 @@ A conversational research assistant with one model-visible external tool: **Tavi
 
 ## Requirements
 
-- Node.js 22 or newer
+- Node.js 22.12 or newer
 - OpenAI API key
 - Tavily API key
 - Supabase project
@@ -18,7 +18,7 @@ A conversational research assistant with one model-visible external tool: **Tavi
 
 ## Tests and build
 
-Run npm test and npm run build from this folder.
+Run npm test and npm run build from this folder. GitHub Actions runs both checks on pushes and pull requests targeting main.
 
 ## Memory and research behavior
 
