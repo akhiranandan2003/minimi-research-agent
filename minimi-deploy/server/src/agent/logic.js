@@ -30,9 +30,13 @@ export function isHistoricalQuestion(text = '') {
 
 // A plain memory request containing 'earlier' must not trigger a web comparison.
 export function isTemporalComparisonQuestion(text = '') {
-  return /\b(change|changed|compare|compared|comparison|before and after|over time|since \d{4}|from \d{4} to \d{4}|last year|then and now|then vs now|trend|growth|decline|increase|decrease|how has .+ evolved)\b/i.test(text);
+  const value = String(text);
+  const explicitChange = /\\b(change|changed|comparison|compared|compare|over time|since \\d{4}|from \\d{4} to \\d{4}|last year|then and now|then vs now|trend|growth|decline|increase|decrease|how has .+ evolved)\\b/i.test(value);
+  const yearRange = /\\bbetween\\s+(?:19|20)\\d{2}\\s+and\\s+(?:19|20)\\d{2}\\b/i.test(value);
+  const yearVersusNow = /\\b(?:19|20)\\d{2}\\s+(?:vs\\.?|versus)\\s+(?:today|now|current(?:ly)?|(?:19|20)\\d{2})\\b/i.test(value);
+  const nowVersusYear = /\\b(?:today|now|current(?:ly)?)\\s+(?:vs\\.?|versus)\\s+(?:the\\s+)?(?:19|20)\\d{2}\\b/i.test(value);
+  return explicitChange || yearRange || yearVersusNow || nowVersusYear;
 }
-
 export function chooseToolMode({ historical = false, temporal = false } = {}) {
   // History-only questions use stored rows and do not need web search.
   return historical && !temporal ? 'none' : 'auto';
