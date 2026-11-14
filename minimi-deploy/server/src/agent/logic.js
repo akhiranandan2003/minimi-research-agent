@@ -110,10 +110,10 @@ export function mergeSources(existing = [], incoming = []) {
   return [...byUrl.values()].map((source, index) => ({ ...source, citation: index + 1 }));
 }
 
-export function mergeSearchCallResults(searchRuns = []) {
+export function mergeSearchCallResults(searchRuns = [], existingSources = []) {
   // Promise.all preserves the original call order. Merge in that order so
   // citation numbers never depend on which Tavily request finishes first.
-  let sources = [];
+  let sources = mergeSources([], existingSources);
   for (const run of searchRuns) {
     sources = mergeSources(sources, run.sources || []);
   }
