@@ -41,3 +41,17 @@ test('a failed search call produces a bounded error result without discarding ot
   assert.equal(merged.sources.length, 1);
   assert.equal(merged.outputs[1].results[0].citation, 1);
 });
+
+
+test('citations remain stable when the agent performs a later search round', () => {
+  const firstRound = mergeSearchCallResults([
+    { sources: [{ title: 'First round', url: 'https://first.example/source' }] },
+  ]);
+  const secondRound = mergeSearchCallResults([
+    { sources: [{ title: 'Second round', url: 'https://second.example/source' }] },
+  ], firstRound.sources);
+
+  assert.deepEqual(secondRound.sources.map((source) => source.citation), [1, 2]);
+  assert.equal(secondRound.sources[0].title, 'First round');
+  assert.equal(secondRound.outputs[0].results[0].citation, 2);
+});
