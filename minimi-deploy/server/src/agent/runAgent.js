@@ -87,7 +87,7 @@ export async function runAgent({ conversationId, message }) {
       }
     }));
 
-    const mergedSearch = mergeSearchCallResults(searchRuns);
+    const mergedSearch = mergeSearchCallResults(searchRuns, sourceState.sources);
     sourceState.sources = mergedSearch.sources;
     const outputs = searchRuns.map((run, index) => ({
       type: 'function_call_output',
