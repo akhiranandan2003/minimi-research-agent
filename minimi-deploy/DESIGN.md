@@ -11,6 +11,7 @@ A React + Vite chat client calls a Node.js + Express API. The API validates requ
 - **OpenAI Responses API:** structured function calling without an agent framework obscuring the one-tool constraint.
 - **Tavily:** the only external tool exposed to the model. Search results are untrusted evidence, never instructions.
 - **Supabase PostgreSQL:** durable, inspectable message history; conversation/time and full-text indexes support recent context and older topic-matching messages.
+- **Testable orchestration:** provider adapters are injected into a small runner, so mocked tests cover memory, tool routing, multi-round citations, and search failures without API credentials.
 
 ## Memory, citations, and time comparisons
 
@@ -24,4 +25,4 @@ For each turn, the API loads recent messages plus up to 30 older messages matchi
 
 ## What another week would improve
 
-Add Supabase Auth and per-user ownership/RLS before production use; add relevance scoring and message-level memory citations; stream responses; add rate limits, tracing, end-to-end tests and CI; and improve mobile accessibility. Evaluate date extraction and temporal comparisons against a fixed benchmark before expanding agent behavior.
+Add Supabase Auth and per-user ownership/RLS before production use; add relevance scoring and message-level memory citations; stream responses; add rate limits and tracing; expand mocked orchestration tests into staging tests against real providers; and improve mobile accessibility. Evaluate date extraction and temporal comparisons against a fixed benchmark before expanding agent behavior. CI already runs the backend suite and frontend production build on pushes and pull requests.
