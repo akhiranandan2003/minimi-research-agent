@@ -13,10 +13,10 @@ function getWebSearchCalls(response) {
   return (response.output || []).filter(isAllowedToolCall);
 }
 
-async function createFinalAnswer(client, response, instructions) {
+async function createFinalAnswer(client, response, instructions, model) {
   if (!getWebSearchCalls(response).length) return response;
   return client.responses.create({
-    model: undefined,
+    model,
     instructions,
     previous_response_id: response.id,
     input: [{
@@ -95,7 +95,7 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
       });
     }
 
-    response = await createFinalAnswer(client, response, instructions);
+    response = await createFinalAnswer(client, response, instructions, model);
     const draftAnswer = response.output_text?.trim() || 'I could not generate a response. Please try again.';
     const answer = validateCitationReferences(draftAnswer, sourceState.sources);
 
