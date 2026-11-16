@@ -1,16 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 import { config } from '../config.js';
 
-let client;
+// Every request gets a client carrying that user's JWT. Postgres RLS therefore
+// applies to reads and writes; the server never uses a service-role bypass key.
+export function createUserSupabase(accessToken) {
+  if (!config.supabaseUrl || !config.supabaseAnonKey) {
+    throw new Error('Supabase is not configured. Add SUPABASE_URL and SUPABASE_ANON_KEY to .env.');
+  }
+  if (typeof accessToken !== 'string' || !accessToken.trim()) {
+    throw new Error('A Supabase access token is required.');
+  }
 
-export function getSupabase() {
-  if (!config.supabaseUrl || !config.supabaseServiceRoleKey) {
-    throw new Error('Supabase is not configured. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to .env.');
-  }
-  if (!client) {
-    client = createClient(config.supabaseUrl, config.supabaseServiceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
-    });
-  }
-  return client;
+  return createClient(config.supabaseUrl, config.supabaseAnonKey, {
+    global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+  });
 }

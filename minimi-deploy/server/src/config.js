@@ -10,7 +10,7 @@ export const config = {
   openaiModel: process.env.OPENAI_MODEL || 'gpt-5.5',
   tavilyApiKey: process.env.TAVILY_API_KEY,
   supabaseUrl: process.env.SUPABASE_URL,
-  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
 };
 
 export function missingServerConfig() {
@@ -18,6 +18,6 @@ export function missingServerConfig() {
     ['OPENAI_API_KEY', config.openaiApiKey],
     ['TAVILY_API_KEY', config.tavilyApiKey],
     ['SUPABASE_URL', config.supabaseUrl],
-    ['SUPABASE_SERVICE_ROLE_KEY', config.supabaseServiceRoleKey],
+    ['SUPABASE_ANON_KEY', config.supabaseAnonKey],
   ].filter(([, value]) => !value).map(([name]) => name);
 }

@@ -29,8 +29,8 @@ async function createFinalAnswer(client, response, instructions, model) {
 }
 
 /**
- * Builds the orchestration layer with injected providers. Keeping provider SDKs
- * outside this module makes the complete agent flow testable without API keys.
+ * Provider adapters are injected so the orchestration can be tested without
+ * credentials. Every turn must carry an authenticated, user-scoped DB client.
  */
 export function createAgentRunner({ getClient, search, getHistory, saveMessage, model }) {
   for (const [name, value] of Object.entries({ getClient, search, getHistory, saveMessage })) {
@@ -40,8 +40,10 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
     throw new TypeError('createAgentRunner requires a model name.');
   }
 
-  return async function runAgent({ conversationId, message }) {
-    const historyRecords = await getHistory(conversationId, 40, message);
+  return async function runAgent({ conversationId, message, userId, supabase }) {
+    if (!userId || !supabase) throw new Error('Authenticated user context is required.');
+    const dbContext = { userId, supabase };
+    const historyRecords = await getHistory(conversationId, 40, message, dbContext);
     const priorHistory = historyRecords
       .filter((record) => record && ['user', 'assistant'].includes(record.role) && typeof record.content === 'string')
       .map((record) => ({ role: record.role, content: record.content }));
@@ -52,7 +54,7 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
     const sourceState = { sources: [] };
     const client = await getClient();
 
-    await saveMessage({ conversationId, role: 'user', content: message });
+    await saveMessage({ ...dbContext, conversationId, role: 'user', content: message });
 
     let response = await client.responses.create({
       model,
@@ -100,6 +102,7 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
     const answer = validateCitationReferences(draftAnswer, sourceState.sources);
 
     await saveMessage({
+      ...dbContext,
       conversationId,
       role: 'assistant',
       content: answer,

@@ -14,13 +14,13 @@ function chronological(records) {
   });
 }
 
-// Always constrain both reads to the requested conversation. The full-text pass
-// retrieves older matching messages; the recent pass preserves nearby context.
-export async function queryConversationHistory(supabase, conversationId, limit = 40, question = '') {
+// Both the owner and conversation filters are applied to every database read.
+export async function queryConversationHistory(supabase, userId, conversationId, limit = 40, question = '') {
   const safeLimit = Math.min(100, Math.max(1, Math.floor(Number(limit) || 40)));
   const recentResult = await supabase
     .from('messages')
     .select(HISTORY_COLUMNS)
+    .eq('user_id', userId)
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
     .limit(safeLimit);
@@ -33,13 +33,13 @@ export async function queryConversationHistory(supabase, conversationId, limit =
     const relevantResult = await supabase
       .from('messages')
       .select(HISTORY_COLUMNS)
+      .eq('user_id', userId)
       .eq('conversation_id', conversationId)
       .textSearch('content', searchQuery, { type: 'websearch', config: 'english' })
       .order('created_at', { ascending: false })
       .limit(30);
 
     if (relevantResult.error) {
-      // Recent history remains useful if full-text retrieval is unavailable.
       console.warn('[memory] Full-text history lookup failed:', relevantResult.error.message);
     } else {
       combined.push(...(relevantResult.data || []));

@@ -5,8 +5,17 @@ import { z } from 'zod';
 import { config, missingServerConfig } from './config.js';
 import { runAgent } from './agent/runAgent.js';
 import { getConversationHistory } from './services/memory.js';
+import { createAuthMiddleware } from './middleware/auth.js';
+import { createUserRateLimiter } from './middleware/rate-limit.js';
 
 const app = express();
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 app.use(cors({
   origin(origin, callback) {
     if (!origin || config.clientOrigins.includes(origin)) return callback(null, true);
@@ -20,6 +29,8 @@ const chatSchema = z.object({
   conversationId: uuidSchema,
   message: z.string().trim().min(1).max(6000),
 });
+const requireAuth = createAuthMiddleware();
+const limitChat = createUserRateLimiter({ windowMs: 60_000, maxRequests: 20 });
 
 app.get('/api/ping', (_req, res) => res.json({ status: 'ok' }));
 
@@ -31,17 +42,16 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-app.post('/api/conversations', (_req, res) => {
-  // The UUID is an unguessable conversation handle, not a substitute for user authentication.
+app.post('/api/conversations', requireAuth, (_req, res) => {
   res.status(201).json({ conversationId: crypto.randomUUID() });
 });
 
-app.get('/api/conversations/:conversationId/messages', async (req, res) => {
+app.get('/api/conversations/:conversationId/messages', requireAuth, async (req, res) => {
   if (!uuidSchema.safeParse(req.params.conversationId).success) {
     return res.status(400).json({ error: 'Invalid conversation ID.' });
   }
   try {
-    const messages = await getConversationHistory(req.params.conversationId, 100);
+    const messages = await getConversationHistory(req.supabase, req.user.id, req.params.conversationId, 100);
     return res.json({ messages: messages.map((item) => ({
       role: item.role, content: item.content, createdAt: item.created_at, sources: item.metadata?.sources || [],
     })) });
@@ -51,14 +61,18 @@ app.get('/api/conversations/:conversationId/messages', async (req, res) => {
   }
 });
 
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', requireAuth, limitChat, async (req, res) => {
   const parsed = chatSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Provide a valid conversationId and a message between 1 and 6000 characters.' });
   }
 
   try {
-    const result = await runAgent(parsed.data);
+    const result = await runAgent({
+      ...parsed.data,
+      userId: req.user.id,
+      supabase: req.supabase,
+    });
     return res.json(result);
   } catch (error) {
     console.error('[chat]', error);
@@ -70,6 +84,9 @@ app.post('/api/chat', async (req, res) => {
 
 app.use((error, _req, res, _next) => {
   console.error('[express]', error);
+  if (error instanceof SyntaxError && 'body' in error) {
+    return res.status(400).json({ error: 'Request body must be valid JSON.' });
+  }
   res.status(500).json({ error: 'Unexpected server error.' });
 });
 

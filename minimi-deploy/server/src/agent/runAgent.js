@@ -30,7 +30,8 @@ async function executeWebSearch(rawArguments) {
 export const runAgent = createAgentRunner({
   getClient: getOpenAI,
   search: executeWebSearch,
-  getHistory: getConversationHistory,
-  saveMessage,
+  getHistory: (conversationId, limit, question, { supabase, userId }) =>
+    getConversationHistory(supabase, userId, conversationId, limit, question),
+  saveMessage: ({ supabase, ...message }) => saveMessage(supabase, message),
   model: config.openaiModel,
 });

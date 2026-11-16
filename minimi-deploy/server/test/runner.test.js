@@ -12,6 +12,8 @@ function functionCall(callId, query) {
   };
 }
 
+const userContext = { userId: 'user-123', supabase: {} };
+
 function mockClient(responses) {
   const requests = [];
   return {
@@ -50,11 +52,12 @@ test('history-only orchestration uses retrieved database messages and never exec
     model: 'test-model',
   });
 
-  const result = await runAgent({ conversationId: 'conversation-1', message: 'What did I tell you earlier about my target?' });
+  const result = await runAgent({ ...userContext, conversationId: 'conversation-1', message: 'What did I tell you earlier about my target?' });
 
   assert.equal(historyArgs[0], 'conversation-1');
   assert.equal(historyArgs[1], 40);
   assert.equal(historyArgs[2], 'What did I tell you earlier about my target?');
+  assert.deepEqual(historyArgs[3], userContext);
   assert.deepEqual(requests[0].input.slice(0, 2), [
     { role: 'user', content: 'My target is 65 kg.' },
     { role: 'assistant', content: 'You mentioned a 65 kg target.' },
@@ -68,6 +71,8 @@ test('history-only orchestration uses retrieved database messages and never exec
   assert.deepEqual(result.sources, []);
   assert.equal(saved.length, 2);
   assert.equal(saved[0].role, 'user');
+  assert.equal(saved[0].userId, userContext.userId);
+  assert.equal(saved[0].supabase, userContext.supabase);
   assert.equal(saved[1].metadata.historical, true);
   assert.equal(saved[1].metadata.temporal, false);
 });
@@ -99,6 +104,7 @@ test('temporal orchestration carries real history through two dated searches and
   });
 
   const result = await runAgent({
+    ...userContext,
     conversationId: 'conversation-2',
     message: 'Compare CPI inflation in 2020 with the latest available figure.',
   });
@@ -141,7 +147,7 @@ test('search failures are isolated, provider details are hidden, and invalid cit
       model: 'test-model',
     });
 
-    const result = await runAgent({ conversationId: 'conversation-3', message: 'What is the latest status?' });
+    const result = await runAgent({ ...userContext, conversationId: 'conversation-3', message: 'What is the latest status?' });
 
     assert.match(requests[1].input[0].output, /Web search failed/);
     assert.doesNotMatch(requests[1].input[0].output, /private API token/);
@@ -151,4 +157,19 @@ test('search failures are isolated, provider details are hidden, and invalid cit
   } finally {
     console.error = originalError;
   }
+});
+
+test('agent runner refuses to access memory without authenticated database context', async () => {
+  const { client } = mockClient([]);
+  const runAgent = createAgentRunner({
+    getClient: () => client,
+    search: async () => [],
+    getHistory: async () => [],
+    saveMessage: async () => {},
+    model: 'test-model',
+  });
+  await assert.rejects(
+    runAgent({ conversationId: 'conversation-no-user', message: 'Hello' }),
+    /Authenticated user context is required/,
+  );
 });

@@ -1,15 +1,16 @@
-import { getSupabase } from './supabase.js';
 import { queryConversationHistory } from './memory-query.js';
 
 export { toModelHistory } from './memory-query.js';
 
 // Database rows are the only source of conversational memory.
-export async function getConversationHistory(conversationId, limit = 40, question = '') {
-  return queryConversationHistory(getSupabase(), conversationId, limit, question);
+export async function getConversationHistory(supabase, userId, conversationId, limit = 40, question = '') {
+  return queryConversationHistory(supabase, userId, conversationId, limit, question);
 }
 
-export async function saveMessage({ conversationId, role, content, metadata = {} }) {
-  const { error } = await getSupabase().from('messages').insert({
+export async function saveMessage(supabase, { userId, conversationId, role, content, metadata = {} }) {
+  if (!supabase || !userId) throw new Error('Authenticated database context is required to save a message.');
+  const { error } = await supabase.from('messages').insert({
+    user_id: userId,
     conversation_id: conversationId,
     role,
     content,

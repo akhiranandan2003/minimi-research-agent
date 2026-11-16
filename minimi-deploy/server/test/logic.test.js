@@ -119,10 +119,11 @@ test('memory retrieval combines recent context with older matching database rows
     { id: 2, role: 'user', content: 'Recent question', created_at: '2026-01-02T00:00:00Z' },
   ], error: null };
   const { client, calls } = fakeSupabase([recent, relevant]);
-  const rows = await queryConversationHistory(client, 'conversation-123', 40, 'What did I tell you about my target weight in 2025?');
+  const rows = await queryConversationHistory(client, 'user-123', 'conversation-123', 40, 'What did I tell you about my target weight in 2025?');
   assert.deepEqual(rows.map((row) => row.id), [1, 2, 3]);
   assert.equal(calls.length, 2);
   assert.ok(calls.every((call) => call.table === 'messages'));
+  assert.ok(calls.every((call) => call.filters.some(([column, value]) => column === 'user_id' && value === 'user-123')));
   assert.ok(calls.every((call) => call.filters.some(([column, value]) => column === 'conversation_id' && value === 'conversation-123')));
   assert.deepEqual(calls[1].textSearch, ['content', '"target" OR "weight" OR "2025"', { type: 'websearch', config: 'english' }]);
   assert.equal(calls[0].limit, 40);
@@ -136,7 +137,7 @@ test('memory retrieval falls back to recent real rows if full-text search fails'
     const recent = { data: [{ id: 9, role: 'user', content: 'Stored recent message', created_at: '2026-01-01T00:00:00Z' }], error: null };
     const failedSearch = { data: null, error: { message: 'FTS unavailable' } };
     const { client } = fakeSupabase([recent, failedSearch]);
-    const rows = await queryConversationHistory(client, 'conversation-123', 20, 'What did I say about React earlier?');
+    const rows = await queryConversationHistory(client, 'user-123', 'conversation-123', 20, 'What did I say about React earlier?');
     assert.deepEqual(rows.map((row) => row.content), ['Stored recent message']);
   } finally {
     console.warn = originalWarn;
@@ -145,7 +146,7 @@ test('memory retrieval falls back to recent real rows if full-text search fails'
 
 test('a failure to retrieve recent conversation history is surfaced', async () => {
   const { client } = fakeSupabase([{ data: null, error: { message: 'database offline' } }]);
-  await assert.rejects(queryConversationHistory(client, 'conversation-123', 40), /Could not retrieve conversation history: database offline/);
+  await assert.rejects(queryConversationHistory(client, 'user-123', 'conversation-123', 40), /Could not retrieve conversation history: database offline/);
 });
 
 test('stored history is mapped from actual database rows in chronological order', () => {
