@@ -1,10 +1,15 @@
-import crypto from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import { z } from 'zod';
 import { config, missingServerConfig } from './config.js';
 import { runAgent } from './agent/runAgent.js';
 import { getConversationHistory } from './services/memory.js';
+import {
+  createConversation,
+  getConversation,
+  listConversations,
+  touchConversation,
+} from './services/conversations.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createUserRateLimiter } from './middleware/rate-limit.js';
 
@@ -42,8 +47,24 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-app.post('/api/conversations', requireAuth, (_req, res) => {
-  res.status(201).json({ conversationId: crypto.randomUUID() });
+app.get('/api/conversations', requireAuth, async (req, res) => {
+  try {
+    const conversations = await listConversations(req.supabase, req.user.id, 50);
+    return res.json({ conversations });
+  } catch (error) {
+    console.error('[conversations:list]', error);
+    return res.status(500).json({ error: 'Could not load conversations.' });
+  }
+});
+
+app.post('/api/conversations', requireAuth, async (req, res) => {
+  try {
+    const conversation = await createConversation(req.supabase, req.user.id);
+    return res.status(201).json({ conversation });
+  } catch (error) {
+    console.error('[conversations:create]', error);
+    return res.status(500).json({ error: 'Could not create a conversation.' });
+  }
 });
 
 app.get('/api/conversations/:conversationId/messages', requireAuth, async (req, res) => {
@@ -51,9 +72,14 @@ app.get('/api/conversations/:conversationId/messages', requireAuth, async (req, 
     return res.status(400).json({ error: 'Invalid conversation ID.' });
   }
   try {
+    const conversation = await getConversation(req.supabase, req.user.id, req.params.conversationId);
+    if (!conversation) return res.status(404).json({ error: 'Conversation not found.' });
     const messages = await getConversationHistory(req.supabase, req.user.id, req.params.conversationId, 100);
     return res.json({ messages: messages.map((item) => ({
-      role: item.role, content: item.content, createdAt: item.created_at, sources: item.metadata?.sources || [],
+      role: item.role,
+      content: item.content,
+      createdAt: item.created_at,
+      sources: item.metadata?.sources || [],
     })) });
   } catch (error) {
     console.error('[history]', error);
@@ -68,6 +94,14 @@ app.post('/api/chat', requireAuth, limitChat, async (req, res) => {
   }
 
   try {
+    const owned = await touchConversation(
+      req.supabase,
+      req.user.id,
+      parsed.data.conversationId,
+      parsed.data.message,
+    );
+    if (!owned) return res.status(404).json({ error: 'Conversation not found.' });
+
     const result = await runAgent({
       ...parsed.data,
       userId: req.user.id,
@@ -91,5 +125,5 @@ app.use((error, _req, res, _next) => {
 });
 
 app.listen(config.port, () => {
-  console.log(`Minimi API listening on http://localhost:${config.port}`);
+  console.log('Minimi API listening on http://localhost:' + config.port);
 });

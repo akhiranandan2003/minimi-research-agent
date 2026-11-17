@@ -10,14 +10,8 @@ const supabase = supabaseUrl && supabaseAnonKey
     })
   : null;
 
-function getOrCreateConversationId(userId) {
-  const key = `minimi-conversation-id:${userId}`;
-  let id = localStorage.getItem(key);
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(key, id);
-  }
-  return id;
+function authHeaders(accessToken) {
+  return { Authorization: 'Bearer ' + accessToken };
 }
 
 export default function App() {
@@ -29,7 +23,9 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState('');
   const [authMessage, setAuthMessage] = useState('');
+  const [conversations, setConversations] = useState([]);
   const [conversationId, setConversationId] = useState(null);
+  const [conversationLoading, setConversationLoading] = useState(false);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -66,20 +62,59 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!session?.user?.id) {
+    if (!session?.access_token) {
+      setConversations([]);
       setConversationId(null);
       setMessages([]);
-      return;
+      return undefined;
     }
-    setMessages([]);
-    setConversationId(getOrCreateConversationId(session.user.id));
-  }, [session?.user?.id]);
+
+    let active = true;
+    async function loadConversations() {
+      setConversationLoading(true);
+      try {
+        const response = await fetch(API + '/api/conversations', {
+          headers: authHeaders(session.access_token),
+        });
+        if (response.status === 401) {
+          await supabase.auth.signOut();
+          return;
+        }
+        if (!response.ok) throw new Error('Could not load your conversations.');
+        const data = await response.json();
+        let items = data.conversations || [];
+
+        if (items.length === 0) {
+          const created = await fetch(API + '/api/conversations', {
+            method: 'POST',
+            headers: authHeaders(session.access_token),
+          });
+          if (!created.ok) throw new Error('Could not create your first conversation.');
+          const createdData = await created.json();
+          items = [createdData.conversation];
+        }
+
+        if (active) {
+          setConversations(items);
+          setConversationId(items[0].id);
+        }
+      } catch (error) {
+        if (active) setStatus(error.message || 'Conversation history is unavailable.');
+      } finally {
+        if (active) setConversationLoading(false);
+      }
+    }
+
+    loadConversations();
+    return () => { active = false; };
+  }, [session?.user?.id, session?.access_token]);
 
   useEffect(() => {
     if (!conversationId || !session?.access_token) return undefined;
     let active = true;
-    fetch(`${API}/api/conversations/${conversationId}/messages`, {
-      headers: { Authorization: `Bearer ${session.access_token}` },
+    setMessages([]);
+    fetch(API + '/api/conversations/' + conversationId + '/messages', {
+      headers: authHeaders(session.access_token),
     }).then(async (response) => {
       if (response.status === 401) {
         await supabase.auth.signOut();
@@ -96,9 +131,9 @@ export default function App() {
   }, [conversationId, session?.access_token]);
 
   useEffect(() => {
-    fetch(`${API}/api/health`).then(async (response) => {
+    fetch(API + '/api/health').then(async (response) => {
       const data = await response.json();
-      setStatus(data.status === 'ok' ? 'Ready' : `Add server keys: ${(data.missing || []).join(', ')}`);
+      setStatus(data.status === 'ok' ? 'Ready' : 'Add server keys: ' + (data.missing || []).join(', '));
     }).catch(() => setStatus('API unavailable — start the server with npm run dev'));
   }, []);
 
@@ -134,6 +169,31 @@ export default function App() {
     setDraft('');
   }
 
+  async function startNewChat() {
+    if (!session?.access_token || conversationLoading || busy) return;
+    setConversationLoading(true);
+    try {
+      const response = await fetch(API + '/api/conversations', {
+        method: 'POST',
+        headers: authHeaders(session.access_token),
+      });
+      if (response.status === 401) {
+        await supabase.auth.signOut();
+        return;
+      }
+      if (!response.ok) throw new Error('Could not create a new conversation.');
+      const data = await response.json();
+      const next = data.conversation;
+      setConversations((current) => [next, ...current.filter((item) => item.id !== next.id)]);
+      setConversationId(next.id);
+      setDraft('');
+    } catch (error) {
+      setStatus(error.message || 'Could not create a new conversation.');
+    } finally {
+      setConversationLoading(false);
+    }
+  }
+
   async function sendMessage(event) {
     event.preventDefault();
     const message = draft.trim();
@@ -142,11 +202,11 @@ export default function App() {
     setMessages((current) => [...current, { role: 'user', content: message }]);
     setBusy(true);
     try {
-      const response = await fetch(`${API}/api/chat`, {
+      const response = await fetch(API + '/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: 'Bearer ' + session.access_token,
         },
         body: JSON.stringify({ conversationId, message }),
       });
@@ -157,19 +217,20 @@ export default function App() {
       }
       if (!response.ok) throw new Error(data.error || 'Request failed');
       setMessages((current) => [...current, { role: 'assistant', content: data.answer, sources: data.sources || [] }]);
+      setConversations((current) => {
+        const existing = current.find((item) => item.id === conversationId);
+        const title = existing?.title === 'New chat'
+          ? message.replace(/\s+/g, ' ').slice(0, 80)
+          : (existing?.title || 'New chat');
+        const updated = { ...(existing || {}), id: conversationId, title, updated_at: new Date().toISOString() };
+        return [updated, ...current.filter((item) => item.id !== conversationId)]
+          .sort((left, right) => Date.parse(right.updated_at || '') - Date.parse(left.updated_at || ''));
+      });
     } catch (error) {
-      setMessages((current) => [...current, { role: 'assistant', content: `I couldn't complete that request: ${error.message}` }]);
+      setMessages((current) => [...current, { role: 'assistant', content: 'I could not complete that request: ' + error.message }]);
     } finally {
       setBusy(false);
     }
-  }
-
-  function startNewChat() {
-    if (!session?.user?.id) return;
-    const nextId = crypto.randomUUID();
-    localStorage.setItem(`minimi-conversation-id:${session.user.id}`, nextId);
-    setMessages([]);
-    setConversationId(nextId);
   }
 
   if (!authReady) {
@@ -218,7 +279,21 @@ export default function App() {
       <header className="topbar">
         <div className="brand-mark">M</div>
         <div><div className="brand-name">minimi</div><div className="brand-subtitle">Research agent</div></div>
-        <div className="topbar-right"><span className="status-dot" />{status}<button className="new-chat" onClick={startNewChat}>New chat</button><button className="new-chat" onClick={signOut}>Sign out</button></div>
+        <div className="topbar-right">
+          <span className="status-dot" />
+          <span className="status-label">{status}</span>
+          <select
+            className="conversation-picker"
+            aria-label="Conversation history"
+            value={conversationId || ''}
+            onChange={(event) => setConversationId(event.target.value)}
+            disabled={conversationLoading || conversations.length === 0}
+          >
+            {conversations.map((item) => <option key={item.id} value={item.id}>{item.title || 'New chat'}</option>)}
+          </select>
+          <button className="new-chat" onClick={startNewChat} disabled={conversationLoading || busy}>New chat</button>
+          <button className="new-chat" onClick={signOut}>Sign out</button>
+        </div>
       </header>
 
       <section className="chat-area">
@@ -233,7 +308,7 @@ export default function App() {
           </div>
         ) : (
           <div className="message-list">
-            {messages.map((item, index) => <article className={`message ${item.role}`} key={index}>
+            {messages.map((item, index) => <article className={'message ' + item.role} key={index}>
               <div className="avatar">{item.role === 'user' ? 'You' : 'M'}</div>
               <div className="message-content"><div className="role-label">{item.role === 'user' ? 'YOU' : 'MINIMI'}</div><div className="message-text">{item.content}</div>
                 {item.sources?.length > 0 && <div className="sources"><div className="sources-title">SOURCES</div>{item.sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">[{source.citation}] {source.title} ↗</a>)}</div>}
@@ -247,7 +322,7 @@ export default function App() {
 
       <form className="composer" onSubmit={sendMessage}>
         <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(event); } }} placeholder="Ask Minimi anything…" rows="2" maxLength={6000} />
-        <div className="composer-bottom"><span>Enter to send · Shift + Enter for a new line</span><button type="submit" disabled={busy || !draft.trim() || !conversationId}>{busy ? 'Working…' : 'Send ↑'}</button></div>
+        <div className="composer-bottom"><span>Enter to send · Shift + Enter for a new line</span><button type="submit" disabled={busy || conversationLoading || !draft.trim() || !conversationId}>{busy ? 'Working…' : 'Send ↑'}</button></div>
       </form>
       <footer>Minimi can make mistakes. Verify important information with the linked sources.</footer>
     </main>
