@@ -12,7 +12,7 @@ function compareMessageIds(left, right) {
 
   // PostgreSQL bigint values may arrive as strings and exceed Number.MAX_SAFE_INTEGER.
   // Compare decimal IDs with BigInt so equal-timestamp rows retain true DB order.
-  if (/^\\d+$/.test(leftId) && /^\\d+$/.test(rightId)) {
+  if (/^\d+$/.test(leftId) && /^\d+$/.test(rightId)) {
     const leftBigInt = BigInt(leftId);
     const rightBigInt = BigInt(rightId);
     return leftBigInt < rightBigInt ? -1 : leftBigInt > rightBigInt ? 1 : 0;
