@@ -6,11 +6,28 @@ function stableMessageKey(record) {
   return record.id ?? String(record.created_at || '') + ':' + String(record.role || '') + ':' + String(record.content || '');
 }
 
+function compareMessageIds(left, right) {
+  const leftId = String(left.id ?? '');
+  const rightId = String(right.id ?? '');
+
+  // PostgreSQL bigint values may arrive as strings and exceed Number.MAX_SAFE_INTEGER.
+  // Compare decimal IDs with BigInt so equal-timestamp rows retain true DB order.
+  if (/^\\d+$/.test(leftId) && /^\\d+$/.test(rightId)) {
+    const leftBigInt = BigInt(leftId);
+    const rightBigInt = BigInt(rightId);
+    return leftBigInt < rightBigInt ? -1 : leftBigInt > rightBigInt ? 1 : 0;
+  }
+
+  return leftId.localeCompare(rightId);
+}
+
 function chronological(records) {
   return [...records].sort((left, right) => {
-    const timeDifference = (Date.parse(left.created_at || '') || 0) - (Date.parse(right.created_at || '') || 0);
-    if (timeDifference !== 0) return timeDifference;
-    return Number(left.id || 0) - Number(right.id || 0);
+    const leftTime = Date.parse(left.created_at || '');
+    const rightTime = Date.parse(right.created_at || '');
+    const safeLeftTime = Number.isFinite(leftTime) ? leftTime : 0;
+    const safeRightTime = Number.isFinite(rightTime) ? rightTime : 0;
+    return (safeLeftTime - safeRightTime) || compareMessageIds(left, right);
   });
 }
 
