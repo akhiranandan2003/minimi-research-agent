@@ -77,7 +77,7 @@ test('history-only orchestration uses retrieved database messages and never exec
   assert.equal(saved[1].metadata.temporal, false);
 });
 
-test('temporal orchestration carries real history through two dated searches and preserves citations', async () => {
+test('temporal orchestration forces two distinct dated searches and preserves citations', async () => {
   const { client, requests } = mockClient([
     { id: 'turn-1', output: [functionCall('search-2020', 'official inflation metric 2020')] },
     { id: 'turn-2', output: [functionCall('search-latest', 'latest official inflation metric 2026')] },
@@ -114,8 +114,12 @@ test('temporal orchestration carries real history through two dated searches and
     'latest official inflation metric 2026',
   ]);
   assert.equal(requests.length, 3);
-  assert.equal(requests[0].tool_choice, 'auto');
-  assert.match(requests[0].instructions, /same metric, unit, geography, population, and scope/);
+  assert.equal(requests[0].tool_choice, 'required');
+  assert.match(requests[0].instructions, /at least two distinct successful web_search queries/);
+  assert.equal(requests[1].tool_choice, 'required');
+  assert.match(requests[1].input[1].content, /Search the missing comparison period/);
+  assert.match(requests[1].input[1].content, /Do not repeat these attempted queries/);
+  assert.equal(requests[2].tool_choice, 'auto');
   assert.equal(requests[1].previous_response_id, 'turn-1');
   assert.equal(requests[2].previous_response_id, 'turn-2');
   assert.match(requests[1].input[0].output, /Official 2020 CPI release/);
@@ -124,9 +128,50 @@ test('temporal orchestration carries real history through two dated searches and
   assert.match(requests[2].input[0].output, /"citation":2/);
   assert.equal(requests.every((request) => request.tools.length === 1 && request.tools[0].name === 'web_search'), true);
   assert.deepEqual(result.sources.map((source) => source.citation), [1, 2]);
-  assert.match(result.answer, /2020 \[1\].*latest period \[2\]/);
+  assert.match(result.answer, /2020 [1].*latest period [2]/);
   assert.equal(saved[1].metadata.temporal, true);
   assert.equal(saved[1].metadata.historical, false);
+});
+
+test('temporal answer explicitly reports incomplete evidence when only one distinct search succeeds', async () => {
+  const { client, requests } = mockClient([
+    { id: 'one-search', output: [functionCall('baseline', 'official CPI inflation 2020')] },
+    { id: 'premature-answer', output: [], output_text: 'Inflation increased by 4%.' },
+    { id: 'guarded-final', output: [], output_text: 'I found one dated source set, so I cannot verify a like-for-like change yet.' },
+  ]);
+  const originalError = console.error;
+  console.error = () => {};
+
+  try {
+    const runAgent = createAgentRunner({
+      getClient: () => client,
+      search: async () => [{
+        title: '2020 CPI release',
+        url: 'https://stats.example/2020',
+        publishedDate: '2021-01-12',
+        content: 'Historical CPI observation',
+      }],
+      getHistory: async () => [],
+      saveMessage: async () => {},
+      model: 'test-model',
+    });
+
+    const result = await runAgent({
+      ...userContext,
+      conversationId: 'conversation-incomplete',
+      message: 'Compare CPI inflation in 2020 with the latest available figure.',
+    });
+
+    assert.equal(requests.length, 3);
+    assert.equal(requests[1].tool_choice, 'required');
+    assert.equal(requests[2].tool_choice, 'none');
+    assert.match(requests[2].input[0].content, /Exactly 1 distinct web-search queries returned usable sources/);
+    assert.match(requests[2].input[0].content, /Do not present a verified like-for-like temporal comparison/);
+    assert.match(result.answer, /cannot verify a like-for-like change/);
+    assert.equal(result.sources.length, 1);
+  } finally {
+    console.error = originalError;
+  }
 });
 
 test('search failures are isolated, provider details are hidden, and invalid citations are rejected', async () => {
