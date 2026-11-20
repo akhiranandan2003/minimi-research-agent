@@ -128,7 +128,7 @@ test('temporal orchestration forces two distinct dated searches and preserves ci
   assert.match(requests[2].input[0].output, /"citation":2/);
   assert.equal(requests.every((request) => request.tools.length === 1 && request.tools[0].name === 'web_search'), true);
   assert.deepEqual(result.sources.map((source) => source.citation), [1, 2]);
-  assert.match(result.answer, /2020 [1].*latest period [2]/);
+  assert.ok(result.answer.includes('2020 [1] and the latest period [2]'));
   assert.equal(saved[1].metadata.temporal, true);
   assert.equal(saved[1].metadata.historical, false);
 });
