@@ -16,7 +16,7 @@ function getWebSearchCalls(response) {
 
 function normalizedQuery(call) {
   try {
-    return parseToolArguments(call.arguments).query.toLocaleLowerCase().replace(/\\s+/g, ' ').trim();
+    return parseToolArguments(call.arguments).query.toLocaleLowerCase().replace(/\s+/g, ' ').trim();
   } catch {
     return null;
   }
@@ -71,7 +71,7 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
       ...(temporal ? [
         'TEMPORAL SEARCH REQUIREMENT: execute at least two distinct successful web_search queries. One must target the historical/baseline period and another must target the latest/current comparable period. Use relevant stored conversation context to identify the metric and scope. Make the second query explicitly cover the comparison period not covered by the first. If two distinct searches do not return usable sources, disclose that the comparison is incomplete and do not calculate a trend.',
       ] : []),
-    ].join('\\n');
+    ].join('\n');
     const sourceState = { sources: [] };
     const successfulTemporalSearchQueries = new Set();
     const attemptedSearchQueries = new Set();
