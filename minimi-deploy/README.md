@@ -27,7 +27,7 @@ Run `npm test` and `npm run build` from this folder. GitHub Actions runs both ch
 - The conversation archive lists the signed-in user's conversations; a new chat is created in PostgreSQL and prior chats can be reopened.
 - Recent messages and older topic-matching messages are loaded from PostgreSQL for the signed-in user and selected conversation only.
 - Historical-only questions do not invoke web search. If the stored messages do not contain the requested detail, Minimi must say so.
-- Change-over-time questions retrieve relevant stored context and require at least two distinct successful web-search queries: one for the historical/baseline period and one for the latest/current comparable period. If either period cannot be sourced, Minimi must state that the comparison is incomplete and must not invent a trend.
+- Change-over-time questions retrieve relevant stored context and derive explicit target periods from the question (for example, 2020 plus latest, or 2019 versus 2024). Each successful web-search query can cover only one target period, so two different queries about the same year do not satisfy the comparison. If any period cannot be sourced after bounded search rounds, Minimi names the missing period and must not invent a trend.
 - Temporal answers must compare the same metric, unit, geography, population, and scope, and distinguish user-provided historical values from independently verified facts.
 - Search citations are numbered, de-duplicated, restricted to HTTP(S) URLs, and validated before the answer is saved.
 - Retrieved web content is untrusted evidence; it cannot change the agent's instructions or authorize another tool.
