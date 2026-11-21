@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   WEB_SEARCH_TOOL, buildHistorySearchQuery, buildInstructions, chooseToolMode,
-  extractHistoryTerms, isAllowedToolCall, isHistoricalQuestion, isTemporalComparisonQuestion,
+  extractHistoryTerms, extractTemporalTargets, matchTemporalTarget, isAllowedToolCall, isHistoricalQuestion, isTemporalComparisonQuestion,
   mergeSources, normalizeSearchResults, parseToolArguments, validateCitationReferences,
 } from '../src/agent/logic.js';
 import { queryConversationHistory, toModelHistory } from '../src/services/memory-query.js';
@@ -45,6 +45,32 @@ test('temporal comparison requests are detected across common date and versus ph
   assert.equal(isTemporalComparisonQuestion('How did prices differ between 2019 and 2024?'), true);
   assert.equal(isTemporalComparisonQuestion('What did I tell you earlier about my target weight?'), false);
   assert.equal(isTemporalComparisonQuestion('What is a closure in JavaScript?'), false);
+});
+
+test('temporal targets distinguish explicit years from baseline and latest periods', () => {
+  assert.deepEqual(extractTemporalTargets('Compare CPI in 2019 and 2024.'), [
+    { id: 'year:2019', label: '2019' },
+    { id: 'year:2024', label: '2024' },
+  ]);
+  assert.deepEqual(extractTemporalTargets('Compare CPI in 2020 with the latest figure.'), [
+    { id: 'year:2020', label: '2020' },
+    { id: 'latest', label: 'latest/current period' },
+  ]);
+  assert.deepEqual(extractTemporalTargets('Compare the price then and now.'), [
+    { id: 'baseline', label: 'historical/baseline period' },
+    { id: 'latest', label: 'latest/current period' },
+  ]);
+});
+
+test('each successful temporal query can cover only one explicitly targeted period', () => {
+  const yearTargets = extractTemporalTargets('Compare CPI in 2019 and 2024.');
+  assert.equal(matchTemporalTarget('official CPI 2019 annual data', yearTargets), 'year:2019');
+  assert.equal(matchTemporalTarget('official CPI 2024 annual data', yearTargets), 'year:2024');
+  assert.equal(matchTemporalTarget('official CPI 2019 and 2024 comparison', yearTargets), 'year:2019');
+  const openTargets = extractTemporalTargets('Compare CPI then and now.');
+  assert.equal(matchTemporalTarget('historical CPI baseline data', openTargets), 'baseline');
+  assert.equal(matchTemporalTarget('latest current CPI release', openTargets), 'latest');
+  assert.equal(matchTemporalTarget('CPI statistics', openTargets), null);
 });
 
 test('tool routing skips web search for history-only questions but permits temporal research', () => {
