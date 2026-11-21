@@ -2,6 +2,8 @@ import {
   WEB_SEARCH_TOOL,
   buildInstructions,
   chooseToolMode,
+  extractTemporalTargets,
+  matchTemporalTarget,
   isAllowedToolCall,
   isHistoricalQuestion,
   isTemporalComparisonQuestion,
@@ -25,13 +27,18 @@ function normalizedQuery(call) {
 async function createFinalAnswer(client, response, instructions, model, {
   temporal = false,
   successfulTemporalSearchCount = 0,
+  successfulTemporalPeriods = [],
+  requiredTemporalPeriods = [],
 } = {}) {
   const hasPendingSearchCalls = getWebSearchCalls(response).length > 0;
-  const temporalEvidenceIncomplete = temporal && successfulTemporalSearchCount < 2;
+  const coveredPeriods = new Set(successfulTemporalPeriods);
+  const missingPeriods = requiredTemporalPeriods.filter((period) => !coveredPeriods.has(period.id));
+  const temporalEvidenceIncomplete = temporal
+    && (successfulTemporalSearchCount < 2 || missingPeriods.length > 0);
   if (!hasPendingSearchCalls && !temporalEvidenceIncomplete) return response;
 
   const finalInstruction = temporalEvidenceIncomplete
-    ? `Answer now using only the conversation and search evidence already provided. Exactly ${successfulTemporalSearchCount} distinct web-search queries returned usable sources; a complete two-period search has not been verified. Do not present a verified like-for-like temporal comparison or calculate a change/percentage. Explicitly state that the evidence is incomplete, explain what period or evidence remains unverified, and distinguish any user-provided historical value from independently verified facts.`
+    ? `Answer now using only the conversation and search evidence already provided. Exactly ${successfulTemporalSearchCount} distinct web-search queries returned usable sources. Covered periods: ${requiredTemporalPeriods.filter((period) => coveredPeriods.has(period.id)).map((period) => period.label).join(', ') || 'none'}. Missing periods: ${missingPeriods.map((period) => period.label).join(', ') || 'none'}. Do not present a verified like-for-like temporal comparison or calculate a change/percentage. Explicitly state that the evidence is incomplete, identify the missing period, and distinguish any user-provided historical value from independently verified facts.`
     : 'Answer now using only the conversation and search evidence already provided. Do not request another tool call. Clearly state any evidence gaps.';
 
   return client.responses.create({
@@ -65,15 +72,17 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
       .map((record) => ({ role: record.role, content: record.content }));
     const historical = isHistoricalQuestion(message);
     const temporal = isTemporalComparisonQuestion(message);
+    const temporalTargets = temporal ? extractTemporalTargets(message) : [];
     const toolMode = chooseToolMode({ historical, temporal });
     const instructions = [
       buildInstructions({ historical, temporal }),
       ...(temporal ? [
-        'TEMPORAL SEARCH REQUIREMENT: execute at least two distinct successful web_search queries. One must target the historical/baseline period and another must target the latest/current comparable period. Use relevant stored conversation context to identify the metric and scope. Make the second query explicitly cover the comparison period not covered by the first. If two distinct searches do not return usable sources, disclose that the comparison is incomplete and do not calculate a trend.',
+        `TEMPORAL SEARCH REQUIREMENT: obtain usable search results for each requested period: ${temporalTargets.map((period) => period.label).join(' and ')}. Execute at least two distinct successful web_search queries. Each successful query must clearly target one requested period; a query that mentions multiple periods counts for only one. Use relevant stored conversation context to preserve the same metric and scope. If any period is not covered after the search rounds, disclose that the comparison is incomplete and do not calculate a trend.`,
       ] : []),
     ].join('\n');
     const sourceState = { sources: [] };
     const successfulTemporalSearchQueries = new Set();
+    const successfulTemporalPeriods = new Set();
     const attemptedSearchQueries = new Set();
     const client = await getClient();
 
@@ -109,6 +118,8 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
         if (query) attemptedSearchQueries.add(query);
         if (query && !run.error && Array.isArray(run.sources) && run.sources.length > 0) {
           successfulTemporalSearchQueries.add(query);
+          const coveredPeriod = temporal ? matchTemporalTarget(query, temporalTargets) : null;
+          if (coveredPeriod) successfulTemporalPeriods.add(coveredPeriod);
         }
       }
 
@@ -120,8 +131,9 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
         output: JSON.stringify(mergedSearch.outputs[index]),
       }));
 
+      const missingTemporalPeriods = temporalTargets.filter((period) => !successfulTemporalPeriods.has(period.id));
       const needsSecondTemporalSearch = temporal
-        && successfulTemporalSearchQueries.size < 2
+        && (successfulTemporalSearchQueries.size < 2 || missingTemporalPeriods.length > 0)
         && step < maxSearchRounds - 1;
       const followUpInput = [...outputs];
 
@@ -129,7 +141,7 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
         const previousQueries = [...attemptedSearchQueries].join(' | ') || 'none';
         followUpInput.push({
           role: 'user',
-          content: `Only ${successfulTemporalSearchQueries.size} distinct web-search query or queries have returned usable sources. Search the missing comparison period now. Use the original question and stored conversation to preserve the same metric, unit, geography, population, and scope. If the searches so far cover the historical period, search the latest available period; if they cover the latest period, search the historical baseline. Use a new explicit date/period query. Do not repeat these attempted queries: ${previousQueries}. Return a web_search call, not a prose answer.`,
+          content: `Only ${successfulTemporalSearchQueries.size} distinct web-search query or queries have returned usable sources. Missing required period(s): ${missingTemporalPeriods.map((period) => period.label).join(', ') || 'a second distinct evidence query'}. Search one missing period now. Use the original question and stored conversation to preserve the same metric, unit, geography, population, and scope. Each query must clearly target one period. Do not repeat these attempted queries: ${previousQueries}. Return a web_search call, not a prose answer.`,
         });
       }
 
@@ -146,6 +158,8 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
     response = await createFinalAnswer(client, response, instructions, model, {
       temporal,
       successfulTemporalSearchCount: successfulTemporalSearchQueries.size,
+      successfulTemporalPeriods: [...successfulTemporalPeriods],
+      requiredTemporalPeriods: temporalTargets,
     });
     const draftAnswer = response.output_text?.trim() || 'I could not generate a response. Please try again.';
     const answer = validateCitationReferences(draftAnswer, sourceState.sources);
