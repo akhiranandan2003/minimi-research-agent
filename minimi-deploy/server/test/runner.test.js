@@ -133,6 +133,45 @@ test('temporal orchestration forces two distinct dated searches and preserves ci
   assert.equal(saved[1].metadata.historical, false);
 });
 
+test('two distinct successful queries for the same baseline do not satisfy latest-period coverage', async () => {
+  const { client, requests } = mockClient([
+    { id: 'baseline-search-1', output: [functionCall('baseline-1', 'official CPI inflation 2020 historical data')] },
+    { id: 'baseline-search-2', output: [functionCall('baseline-2', '2020 government CPI annual baseline report')] },
+    { id: 'still-incomplete', output: [], output_text: 'I found two sources about 2020.' },
+    { id: 'guarded-final', output: [], output_text: 'Both successful searches cover 2020. I could not verify the latest period, so I cannot calculate a change.' },
+  ]);
+  const runAgent = createAgentRunner({
+    getClient: () => client,
+    search: async (raw) => {
+      const { query } = JSON.parse(raw);
+      return [{
+        title: 'Historical CPI source',
+        url: query.includes('government') ? 'https://stats.example/2020-government' : 'https://stats.example/2020-official',
+        publishedDate: '2021-01-12',
+        content: 'Historical CPI observations for 2020.',
+      }];
+    },
+    getHistory: async () => [],
+    saveMessage: async () => {},
+    model: 'test-model',
+  });
+
+  const result = await runAgent({
+    ...userContext,
+    conversationId: 'conversation-same-period',
+    message: 'Compare CPI inflation in 2020 with the latest available figure.',
+  });
+
+  assert.equal(requests.length, 4);
+  assert.equal(requests[2].tool_choice, 'required');
+  assert.match(requests[2].input[1].content, /Missing required period\(s\): latest\/current period/);
+  assert.equal(requests[3].tool_choice, 'none');
+  assert.match(requests[3].input[0].content, /Covered periods: 2020/);
+  assert.match(requests[3].input[0].content, /Missing periods: latest\/current period/);
+  assert.match(result.answer, /could not verify the latest period/);
+  assert.equal(result.sources.length, 2);
+});
+
 test('temporal answer explicitly reports incomplete evidence when only one distinct search succeeds', async () => {
   const { client, requests } = mockClient([
     { id: 'one-search', output: [functionCall('baseline', 'official CPI inflation 2020')] },
