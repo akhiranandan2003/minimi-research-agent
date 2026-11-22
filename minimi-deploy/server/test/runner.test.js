@@ -164,10 +164,10 @@ test('two distinct successful queries for the same baseline do not satisfy lates
 
   assert.equal(requests.length, 4);
   assert.equal(requests[2].tool_choice, 'required');
-  assert.match(requests[2].input[1].content, /Missing required period\(s\): latest\/current period/);
+  assert.match(requests[2].input[1].content, /Source text has not yet substantiated required period\(s\): latest\/current period/);
   assert.equal(requests[3].tool_choice, 'none');
   assert.match(requests[3].input[0].content, /Source text mentions these requested periods: 2020/);
-  assert.match(requests[3].input[0].content, /Missing periods: latest\/current period/);
+  assert.match(requests[3].input[0].content, /Missing source-text period mentions: latest\/current period/);
   assert.match(result.answer, /could not verify the latest period/);
   assert.equal(result.sources.length, 2);
 });
