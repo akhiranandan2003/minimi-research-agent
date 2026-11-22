@@ -117,7 +117,7 @@ test('temporal orchestration forces two distinct dated searches and preserves ci
   assert.equal(requests[0].tool_choice, 'required');
   assert.match(requests[0].instructions, /at least two distinct successful web_search queries/);
   assert.equal(requests[1].tool_choice, 'required');
-  assert.match(requests[1].input[1].content, /Search the missing comparison period/);
+  assert.match(requests[1].input[1].content, /Search one missing period now/);
   assert.match(requests[1].input[1].content, /Do not repeat these attempted queries/);
   assert.equal(requests[2].tool_choice, 'auto');
   assert.equal(requests[1].previous_response_id, 'turn-1');
@@ -166,7 +166,7 @@ test('two distinct successful queries for the same baseline do not satisfy lates
   assert.equal(requests[2].tool_choice, 'required');
   assert.match(requests[2].input[1].content, /Missing required period\(s\): latest\/current period/);
   assert.equal(requests[3].tool_choice, 'none');
-  assert.match(requests[3].input[0].content, /Covered periods: 2020/);
+  assert.match(requests[3].input[0].content, /Source text mentions these requested periods: 2020/);
   assert.match(requests[3].input[0].content, /Missing periods: latest\/current period/);
   assert.match(result.answer, /could not verify the latest period/);
   assert.equal(result.sources.length, 2);
@@ -203,7 +203,7 @@ test('a year in the search query does not count when returned source text omits 
   assert.equal(requests.length, 4);
   assert.equal(requests[3].tool_choice, 'none');
   assert.match(requests[3].input[0].content, /Missing source-text period mentions: 2020, latest\/current period/);
-  assert.match(requests[3].input[0].content, /publication date is not its data observation date/i);
+  assert.match(requests[3].instructions, /A source publication date is not its data observation date/i);
   assert.match(result.answer, /do not disclose the 2020 observation period/i);
   assert.equal(result.sources.length, 3);
 });

@@ -92,7 +92,7 @@ export function matchTemporalEvidence(sources = [], targets = [], referenceDate 
   for (const target of targets) {
     for (const source of sources) {
       const text = `${source?.title || ''} ${source?.content || ''}`.toLowerCase();
-      const years = [...text.matchAll(/\\b(?:19|20)\\d{2}\\b/g)].map((match) => Number(match[0]));
+      const years = [...text.matchAll(/\b(?:19|20)\d{2}\b/g)].map((match) => Number(match[0]));
       const recentPublication = hasRecentPublicationDate(source?.publishedDate, date);
 
       if (target.id.startsWith('year:')) {
@@ -104,7 +104,7 @@ export function matchTemporalEvidence(sources = [], targets = [], referenceDate 
       if (target.id === 'latest') {
         const hasCurrentObservationYear = years.includes(currentYear) && recentPublication;
         const hasRecentPriorYear = years.includes(currentYear - 1) && recentPublication;
-        const hasRecentLatestLabel = /\\b(latest|current|currently|most recent|this year)\\b/i.test(text)
+        const hasRecentLatestLabel = /\b(latest|current|currently|most recent|this year)\b/i.test(text)
           && recentPublication;
         if (hasCurrentObservationYear || hasRecentPriorYear || hasRecentLatestLabel) return target.id;
         continue;
