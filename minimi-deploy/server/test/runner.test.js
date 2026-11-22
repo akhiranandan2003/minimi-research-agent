@@ -177,6 +177,7 @@ test('a year in the search query does not count when returned source text omits 
     { id: 'query-2020-a', output: [functionCall('query-a', 'official CPI inflation 2020 annual data')] },
     { id: 'query-2020-b', output: [functionCall('query-b', 'government CPI 2020 annual statistics')] },
     { id: 'query-2020-c', output: [functionCall('query-c', 'CPI inflation observations 2020 report')] },
+    { id: 'still-incomplete', output: [], output_text: 'The searches returned pages, but the observation period is unclear.' },
     { id: 'guarded-final', output: [], output_text: 'The sources do not disclose the 2020 observation period, so I cannot verify the comparison.' },
   ]);
   let searchIndex = 0;
@@ -200,10 +201,11 @@ test('a year in the search query does not count when returned source text omits 
   });
 
   assert.equal(searchIndex, 3);
-  assert.equal(requests.length, 4);
-  assert.equal(requests[3].tool_choice, 'none');
-  assert.match(requests[3].input[0].content, /Missing source-text period mentions: 2020, latest\/current period/);
-  assert.match(requests[3].instructions, /A source publication date is not its data observation date/i);
+  assert.equal(requests.length, 5);
+  assert.equal(requests[3].tool_choice, 'auto');
+  assert.equal(requests[4].tool_choice, 'none');
+  assert.match(requests[4].input[0].content, /Missing source-text period mentions: 2020, latest\/current period/);
+  assert.match(requests[4].instructions, /A source publication date is not its data observation date/i);
   assert.match(result.answer, /do not disclose the 2020 observation period/i);
   assert.equal(result.sources.length, 3);
 });
@@ -241,7 +243,7 @@ test('temporal answer explicitly reports incomplete evidence when only one disti
     assert.equal(requests[1].tool_choice, 'required');
     assert.equal(requests[2].tool_choice, 'none');
     assert.match(requests[2].input[0].content, /Exactly 1 distinct web-search queries returned usable sources/);
-    assert.match(requests[2].input[0].content, /Do not present a verified like-for-like temporal comparison/);
+    assert.match(requests[2].input[0].content, /Do not present a verified like-for-like comparison/);
     assert.match(result.answer, /cannot verify a like-for-like change/);
     assert.equal(result.sources.length, 1);
   } finally {
