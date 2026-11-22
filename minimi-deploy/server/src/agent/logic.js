@@ -68,24 +68,52 @@ export function extractTemporalTargets(text = '') {
  * A successful query can satisfy only one requested period. A broad query that
  * mentions both periods cannot by itself count as evidence for both searches.
  */
-export function matchTemporalTarget(query = '', targets = [], currentYear = new Date().getUTCFullYear()) {
-  const value = String(query).toLowerCase();
+function hasRecentPublicationDate(value, referenceDate, maxAgeDays = 548) {
+  const timestamp = Date.parse(String(value || ''));
+  const referenceTimestamp = referenceDate instanceof Date ? referenceDate.getTime() : Date.parse(referenceDate);
+  if (!Number.isFinite(timestamp) || !Number.isFinite(referenceTimestamp)) return false;
+  const maxAgeMs = maxAgeDays * 24 * 60 * 60 * 1000;
+  const futureToleranceMs = 7 * 24 * 60 * 60 * 1000;
+  return timestamp >= referenceTimestamp - maxAgeMs
+    && timestamp <= referenceTimestamp + futureToleranceMs;
+}
+
+/**
+ * Match a requested period against the returned source text, not the search
+ * query. Publication dates are deliberately not used as observation dates.
+ * This is a retrieval gate; the model must still inspect the source and verify
+ * the actual observation period, metric, unit, geography, and scope.
+ */
+export function matchTemporalEvidence(sources = [], targets = [], referenceDate = new Date()) {
+  const date = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
+  if (!Number.isFinite(date.getTime())) return null;
+  const currentYear = date.getUTCFullYear();
+
   for (const target of targets) {
-    if (target.id.startsWith('year:')) {
-      const year = target.id.slice(5);
-      if (new RegExp(`\\b${year}\\b`).test(value)) return target.id;
+    for (const source of sources) {
+      const text = `${source?.title || ''} ${source?.content || ''}`.toLowerCase();
+      const years = [...text.matchAll(/\\b(?:19|20)\\d{2}\\b/g)].map((match) => Number(match[0]));
+      const recentPublication = hasRecentPublicationDate(source?.publishedDate, date);
+
+      if (target.id.startsWith('year:')) {
+        const requestedYear = Number(target.id.slice(5));
+        if (years.includes(requestedYear)) return target.id;
+        continue;
+      }
+
+      if (target.id === 'latest') {
+        const hasCurrentObservationYear = years.includes(currentYear) && recentPublication;
+        const hasRecentPriorYear = years.includes(currentYear - 1) && recentPublication;
+        const hasRecentLatestLabel = /\\b(latest|current|currently|most recent|this year)\\b/i.test(text)
+          && recentPublication;
+        if (hasCurrentObservationYear || hasRecentPriorYear || hasRecentLatestLabel) return target.id;
+        continue;
+      }
+
+      if (target.id === 'baseline' && years.some((year) => year < currentYear)) {
+        return target.id;
+      }
     }
-  }
-
-  if (targets.some((target) => target.id === 'latest')) {
-    const latestSignal = /\b(latest|current|currently|today|now|most recent|this year)\b/i.test(value)
-      || new RegExp(`\\b${currentYear}\\b`).test(value);
-    if (latestSignal) return 'latest';
-  }
-
-  if (targets.some((target) => target.id === 'baseline')) {
-    const baselineSignal = /\b(historical|history|baseline|then|earlier|previous|prior|before|last year|in the past|back in)\b/i.test(value);
-    if (baselineSignal) return 'baseline';
   }
 
   return null;
@@ -113,7 +141,7 @@ export function buildInstructions({ temporal = false, historical = false } = {})
     ? 'The user is asking about prior conversation. Use only the actual earlier user and assistant messages supplied in the conversation input. If the requested detail is absent from those messages, say you cannot find it in the available stored history. Never invent or imply a memory.'
     : 'Use supplied earlier conversation messages when relevant. Do not claim to remember details that are not present in the supplied history.';
   const temporalRule = temporal
-    ? 'This is a change-over-time question. First identify any relevant earlier value and date from the supplied conversation history. Use web_search to find dated evidence for the earlier period and the latest comparable period. Compare the same metric, unit, geography, population, and scope. Distinguish a value the user previously stated from an independently verified historical fact. State the dates for both observations, cite each factual claim, explain any mismatch, and do not calculate a trend or percentage change when the observations are not like-for-like. Explicitly state uncertainty when evidence is missing or incomplete.'
+    ? 'This is a change-over-time question. First identify any relevant earlier value and date from the supplied conversation history. Use web_search to find dated evidence for the earlier period and the latest comparable period. A search query mentioning a year is not evidence: the requested period must appear in a source title or source content before it counts as provisionally retrieved. A source publication date is not its data observation date. Extract the actual observation period from the source content, then compare the same metric, unit, geography, population, and scope. Distinguish a value the user previously stated from an independently verified historical fact. State both observation dates, cite each factual claim, explain any mismatch, and do not calculate a trend or percentage change when observations are not like-for-like. Explicitly state uncertainty when evidence is missing or incomplete.'
     : 'Use web_search when current or externally verifiable information is needed. Do not invent current facts.';
 
   return [

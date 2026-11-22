@@ -172,6 +172,42 @@ test('two distinct successful queries for the same baseline do not satisfy lates
   assert.equal(result.sources.length, 2);
 });
 
+test('a year in the search query does not count when returned source text omits that observation year', async () => {
+  const { client, requests } = mockClient([
+    { id: 'query-2020-a', output: [functionCall('query-a', 'official CPI inflation 2020 annual data')] },
+    { id: 'query-2020-b', output: [functionCall('query-b', 'government CPI 2020 annual statistics')] },
+    { id: 'query-2020-c', output: [functionCall('query-c', 'CPI inflation observations 2020 report')] },
+    { id: 'guarded-final', output: [], output_text: 'The sources do not disclose the 2020 observation period, so I cannot verify the comparison.' },
+  ]);
+  let searchIndex = 0;
+  const runAgent = createAgentRunner({
+    getClient: () => client,
+    search: async () => [{
+      title: 'Annual CPI release',
+      url: `https://stats.example/undated-${++searchIndex}`,
+      publishedDate: '2021-01-12',
+      content: 'Annual CPI release. The page publication date is 2021-01-12; no data observation year is stated.',
+    }],
+    getHistory: async () => [],
+    saveMessage: async () => {},
+    model: 'test-model',
+  });
+
+  const result = await runAgent({
+    ...userContext,
+    conversationId: 'conversation-undated-evidence',
+    message: 'Compare CPI inflation in 2020 with the latest available figure.',
+  });
+
+  assert.equal(searchIndex, 3);
+  assert.equal(requests.length, 4);
+  assert.equal(requests[3].tool_choice, 'none');
+  assert.match(requests[3].input[0].content, /Missing source-text period mentions: 2020, latest\/current period/);
+  assert.match(requests[3].input[0].content, /publication date is not its data observation date/i);
+  assert.match(result.answer, /do not disclose the 2020 observation period/i);
+  assert.equal(result.sources.length, 3);
+});
+
 test('temporal answer explicitly reports incomplete evidence when only one distinct search succeeds', async () => {
   const { client, requests } = mockClient([
     { id: 'one-search', output: [functionCall('baseline', 'official CPI inflation 2020')] },
