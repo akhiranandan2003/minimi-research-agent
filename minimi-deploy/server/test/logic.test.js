@@ -118,6 +118,9 @@ test('relative baseline and latest periods are selected by search intent and sou
     [latestSource], targets, referenceDate, 'historical CPI baseline',
   ), null);
   assert.equal(matchTemporalEvidence(
+    [latestSource], targets, referenceDate, 'historical CPI 2025 baseline',
+  ), null);
+  assert.equal(matchTemporalEvidence(
     [baselineSource], targets, referenceDate, 'latest CPI now',
   ), null);
 });
