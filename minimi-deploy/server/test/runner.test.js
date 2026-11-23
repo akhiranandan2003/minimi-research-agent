@@ -133,6 +133,53 @@ test('temporal orchestration forces two distinct dated searches and preserves ci
   assert.equal(saved[1].metadata.historical, false);
 });
 
+test('then-and-now orchestration credits a recent 2025 source to latest, not baseline', async () => {
+  const { client, requests } = mockClient([
+    { id: 'baseline-turn', output: [functionCall('baseline-search', 'historical CPI 2020 baseline')] },
+    { id: 'latest-turn', output: [functionCall('latest-search', 'latest CPI 2025')] },
+    { id: 'complete-answer', output: [], output_text: 'The historical baseline and latest observation are sourced separately [1] [2].' },
+  ]);
+  const searched = [];
+  const runAgent = createAgentRunner({
+    getClient: () => client,
+    search: async (raw) => {
+      const { query } = JSON.parse(raw);
+      searched.push(query);
+      if (query.includes('historical')) {
+        return [{
+          title: 'Historical CPI observations for 2020',
+          url: 'https://stats.example/cpi-2020',
+          publishedDate: '2021-01-12',
+          content: 'Annual CPI observations for 2020.',
+        }];
+      }
+      return [{
+        title: 'Latest CPI release for 2025',
+        url: 'https://stats.example/cpi-2025-latest',
+        publishedDate: '2026-10-15',
+        content: 'Latest annual CPI observations for 2025.',
+      }];
+    },
+    getHistory: async () => [],
+    saveMessage: async () => {},
+    model: 'test-model',
+  });
+
+  const result = await runAgent({
+    ...userContext,
+    conversationId: 'conversation-relative-periods',
+    message: 'Compare CPI then and now.',
+  });
+
+  assert.deepEqual(searched, ['historical CPI 2020 baseline', 'latest CPI 2025']);
+  assert.equal(requests.length, 3);
+  assert.equal(requests[1].tool_choice, 'required');
+  assert.equal(requests[2].tool_choice, 'auto');
+  assert.match(requests[2].input[0].output, /Latest CPI release for 2025/);
+  assert.deepEqual(result.sources.map((source) => source.citation), [1, 2]);
+  assert.match(result.answer, /baseline and latest observation are sourced separately/);
+});
+
 test('two distinct successful queries for the same baseline do not satisfy latest-period coverage', async () => {
   const { client, requests } = mockClient([
     { id: 'baseline-search-1', output: [functionCall('baseline-1', 'official CPI inflation 2020 historical data')] },
