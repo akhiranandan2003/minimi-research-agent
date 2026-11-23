@@ -135,10 +135,14 @@ export function matchTemporalEvidence(sources = [], targets = [], referenceDate 
     const matchingFacts = facts.filter((fact) => fact.years.includes(year));
     if (!matchingFacts.length) continue;
 
-    if (wantsLatest && matchingFacts.some((fact) => fact.latestEvidence) && latestTarget) {
-      return latestTarget.id;
+    if (wantsLatest) {
+      return matchingFacts.some((fact) => fact.latestEvidence) && latestTarget ? latestTarget.id : null;
     }
-    if (wantsBaseline && baselineTarget) return baselineTarget.id;
+    if (wantsBaseline) {
+      const isRecentLatestObservation = year >= currentYear - 1
+        && matchingFacts.some((fact) => fact.latestEvidence);
+      return !isRecentLatestObservation && baselineTarget ? baselineTarget.id : null;
+    }
     if (year >= currentYear - 1 && matchingFacts.some((fact) => fact.latestEvidence) && latestTarget) {
       return latestTarget.id;
     }
