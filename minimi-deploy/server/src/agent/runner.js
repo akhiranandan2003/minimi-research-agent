@@ -78,7 +78,7 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
     const instructions = [
       buildInstructions({ historical, temporal }),
       ...(temporal ? [
-        `TEMPORAL SEARCH REQUIREMENT: obtain usable source text for each requested period: ${temporalTargets.map((period) => period.label).join(' and ')}. Execute at least two distinct successful web_search queries. A query mentioning a period does not count: the period must appear in a returned source title or content. A single search call can provisionally cover at most one target. Never treat a source publication date as its data observation date. Use relevant stored conversation context to preserve the same metric and scope. If any period is not mentioned in source text after the search rounds, disclose the comparison is incomplete and do not calculate a trend.`,
+        `TEMPORAL SEARCH REQUIREMENT: obtain usable source text for each requested period: ${temporalTargets.map((period) => period.label).join(' and ')}. Execute at least two distinct successful web_search queries. Make each query target one requested side explicitly by including its year or words such as historical/baseline versus latest/current; the query helps disambiguate results but is not evidence. The requested period must still appear in a returned source title or content. A single search call can provisionally cover at most one target. Never treat a source publication date as its data observation date. Use relevant stored conversation context to preserve the same metric and scope. If any period is not mentioned in source text after the search rounds, disclose the comparison is incomplete and do not calculate a trend.`,
       ] : []),
     ].join('\n');
     const sourceState = { sources: [] };
