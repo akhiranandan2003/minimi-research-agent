@@ -73,6 +73,7 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
     const historical = isHistoricalQuestion(message);
     const temporal = isTemporalComparisonQuestion(message);
     const temporalTargets = temporal ? extractTemporalTargets(message) : [];
+    const temporalReferenceDate = new Date();
     const toolMode = chooseToolMode({ historical, temporal });
     const instructions = [
       buildInstructions({ historical, temporal }),
@@ -118,7 +119,9 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
         if (query) attemptedSearchQueries.add(query);
         if (query && !run.error && Array.isArray(run.sources) && run.sources.length > 0) {
           successfulTemporalSearchQueries.add(query);
-          const coveredPeriod = temporal ? matchTemporalEvidence(run.sources, temporalTargets) : null;
+          const coveredPeriod = temporal
+            ? matchTemporalEvidence(run.sources, temporalTargets, temporalReferenceDate, query || '')
+            : null;
           if (coveredPeriod) evidenceBackedTemporalPeriods.add(coveredPeriod);
         }
       }
