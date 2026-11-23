@@ -84,41 +84,76 @@ function hasRecentPublicationDate(value, referenceDate, maxAgeDays = 548) {
  * This is a retrieval gate; the model must still inspect the source and verify
  * the actual observation period, metric, unit, geography, and scope.
  */
-export function matchTemporalEvidence(sources = [], targets = [], referenceDate = new Date()) {
+export function matchTemporalEvidence(sources = [], targets = [], referenceDate = new Date(), query = '') {
   const date = referenceDate instanceof Date ? referenceDate : new Date(referenceDate);
   if (!Number.isFinite(date.getTime())) return null;
   const currentYear = date.getUTCFullYear();
+  const queryText = String(query || '').toLowerCase();
+  const queryYears = [...new Set((queryText.match(/\b(?:19|20)\d{2}\b/g) || []).map(Number))];
+  const wantsLatest = /\b(latest|current|currently|today|now|recent|newest|present)\b/.test(queryText);
+  const wantsBaseline = /\b(baseline|historical|historically|then|earlier|prior|previous|past|older|initial)\b/.test(queryText);
 
-  for (const target of targets) {
-    for (const source of sources) {
-      const text = `${source?.title || ''} ${source?.content || ''}`.toLowerCase();
-      const years = [...text.matchAll(/\b(?:19|20)\d{2}\b/g)].map((match) => Number(match[0]));
-      const recentPublication = hasRecentPublicationDate(source?.publishedDate, date);
+  const facts = sources.map((source) => {
+    const text = (String(source?.title || '') + ' ' + String(source?.content || '')).toLowerCase();
+    const years = [...text.matchAll(/\b(?:19|20)\d{2}\b/g)].map((match) => Number(match[0]));
+    const recentPublication = hasRecentPublicationDate(source?.publishedDate, date);
+    const latestLabel = /\b(latest|current|currently|most recent|this year)\b/i.test(text);
+    const latestEvidence = recentPublication
+      && (years.includes(currentYear) || years.includes(currentYear - 1) || latestLabel);
+    return { years, latestEvidence, recentPublication };
+  });
 
-      if (target.id.startsWith('year:')) {
-        const requestedYear = Number(target.id.slice(5));
-        if (years.includes(requestedYear)) return target.id;
-        continue;
-      }
+  const hasYear = (year, candidates = facts) => candidates.some((fact) => fact.years.includes(year));
 
-      if (target.id === 'latest') {
-        const hasCurrentObservationYear = years.includes(currentYear) && recentPublication;
-        const hasRecentPriorYear = years.includes(currentYear - 1) && recentPublication;
-        const hasRecentLatestLabel = /\b(latest|current|currently|most recent|this year)\b/i.test(text)
-          && recentPublication;
-        if (hasCurrentObservationYear || hasRecentPriorYear || hasRecentLatestLabel) return target.id;
-        continue;
-      }
-
-      if (target.id === 'baseline' && years.some((year) => year < currentYear)) {
-        return target.id;
-      }
+  // For explicit year pairs, use the year targeted by this search call when
+  // the source actually mentions it. The query selects a target; it never
+  // supplies evidence by itself.
+  const explicitTargets = targets.filter((target) => target.id.startsWith('year:'));
+  for (const year of queryYears) {
+    const target = explicitTargets.find((item) => Number(item.id.slice(5)) === year);
+    if (target) return hasYear(year) ? target.id : null;
+  }
+  if (explicitTargets.length) {
+    for (const target of explicitTargets) {
+      if (hasYear(Number(target.id.slice(5)))) return target.id;
     }
+    return null;
   }
 
+  const baselineTarget = targets.find((target) => target.id === 'baseline');
+  const latestTarget = targets.find((target) => target.id === 'latest');
+  const latestFacts = facts.filter((fact) => fact.latestEvidence);
+  const baselineFacts = facts.filter((fact) => (
+    fact.years.some((year) => year < currentYear) && !fact.latestEvidence
+  ));
+
+  // For open-ended then/now comparisons, a year in the search query helps
+  // choose which requested side the call targets, but matching source text is
+  // still mandatory. A recent publication date alone never establishes an
+  // observation year.
+  for (const year of queryYears) {
+    const matchingFacts = facts.filter((fact) => fact.years.includes(year));
+    if (!matchingFacts.length) continue;
+
+    if (wantsLatest && matchingFacts.some((fact) => fact.latestEvidence) && latestTarget) {
+      return latestTarget.id;
+    }
+    if (wantsBaseline && baselineTarget) return baselineTarget.id;
+    if (year >= currentYear - 1 && matchingFacts.some((fact) => fact.latestEvidence) && latestTarget) {
+      return latestTarget.id;
+    }
+    if (year < currentYear - 1 && baselineTarget) return baselineTarget.id;
+  }
+
+  if (wantsLatest) return latestFacts.length && latestTarget ? latestTarget.id : null;
+  if (wantsBaseline) return baselineFacts.length && baselineTarget ? baselineTarget.id : null;
+
+  // Prefer a clearly current source when the query did not identify a side.
+  // Otherwise, use a genuinely older source as the baseline.
+  if (latestFacts.length && latestTarget) return latestTarget.id;
+  if (baselineFacts.length && baselineTarget) return baselineTarget.id;
   return null;
 }
-
 export function chooseToolMode({ historical = false, temporal = false } = {}) {
   // History-only questions use stored rows and do not need web search.
   return historical && !temporal ? 'none' : 'auto';
