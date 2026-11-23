@@ -116,6 +116,7 @@ test('temporal orchestration forces two distinct dated searches and preserves ci
   assert.equal(requests.length, 3);
   assert.equal(requests[0].tool_choice, 'required');
   assert.match(requests[0].instructions, /at least two distinct successful web_search queries/);
+  assert.match(requests[0].instructions, /Make each query target one requested side explicitly/);
   assert.equal(requests[1].tool_choice, 'required');
   assert.match(requests[1].input[1].content, /Search one missing period now/);
   assert.match(requests[1].input[1].content, /Do not repeat these attempted queries/);
