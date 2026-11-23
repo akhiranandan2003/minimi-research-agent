@@ -94,6 +94,47 @@ test('temporal period coverage is based on source text, not query wording or pub
   }], openTargets, referenceDate), null);
 });
 
+test('relative baseline and latest periods are selected by search intent and source evidence', () => {
+  const referenceDate = new Date('2026-11-22T00:00:00Z');
+  const targets = extractTemporalTargets('Compare CPI then and now.');
+  const baselineSource = {
+    title: 'Historical CPI observations for 2020',
+    content: 'Annual CPI observations for 2020.',
+    publishedDate: '2021-01-12',
+  };
+  const latestSource = {
+    title: 'Latest CPI release for 2025',
+    content: 'Latest annual CPI observations for 2025.',
+    publishedDate: '2026-10-15',
+  };
+
+  assert.equal(matchTemporalEvidence(
+    [baselineSource, latestSource], targets, referenceDate, 'historical CPI 2020 baseline',
+  ), 'baseline');
+  assert.equal(matchTemporalEvidence(
+    [baselineSource, latestSource], targets, referenceDate, 'latest CPI 2025',
+  ), 'latest');
+  assert.equal(matchTemporalEvidence(
+    [latestSource], targets, referenceDate, 'historical CPI baseline',
+  ), null);
+  assert.equal(matchTemporalEvidence(
+    [baselineSource], targets, referenceDate, 'latest CPI now',
+  ), null);
+});
+
+test('an explicit year in the search query selects that requested side when a source mentions both years', () => {
+  const referenceDate = new Date('2026-11-22T00:00:00Z');
+  const targets = extractTemporalTargets('Compare CPI in 2019 and 2024.');
+  const sources = [{
+    title: 'CPI comparison 2019 and 2024',
+    content: 'Annual CPI observations for 2019 and 2024.',
+    publishedDate: '2025-01-12',
+  }];
+
+  assert.equal(matchTemporalEvidence(sources, targets, referenceDate, 'official CPI observations for 2024'), 'year:2024');
+  assert.equal(matchTemporalEvidence(sources, targets, referenceDate, 'official CPI observations for 2019'), 'year:2019');
+});
+
 test('one search result mentioning both explicit years provisionally covers only one target', () => {
   const targets = extractTemporalTargets('Compare CPI in 2019 and 2024.');
   assert.equal(matchTemporalEvidence([{
