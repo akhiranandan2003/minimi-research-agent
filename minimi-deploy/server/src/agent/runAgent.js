@@ -3,6 +3,7 @@ import { tavily } from '@tavily/core';
 import { config } from '../config.js';
 import { getConversationHistory, saveMessage } from '../services/memory.js';
 import { createAgentRunner } from './runner.js';
+import { createTemporalAnswerExtractor } from './evidence.js';
 import { normalizeSearchResults, parseToolArguments } from './logic.js';
 
 let openai;
@@ -26,6 +27,11 @@ async function executeWebSearch(rawArguments) {
   return normalizeSearchResults(result);
 }
 
+const extractTemporalAnswer = createTemporalAnswerExtractor({
+  getClient: getOpenAI,
+  model: config.openaiModel,
+});
+
 // Provider SDKs stay in this adapter; runner.js owns the testable orchestration.
 export const runAgent = createAgentRunner({
   getClient: getOpenAI,
@@ -34,4 +40,5 @@ export const runAgent = createAgentRunner({
     getConversationHistory(supabase, userId, conversationId, limit, question),
   saveMessage: ({ supabase, ...message }) => saveMessage(supabase, message),
   model: config.openaiModel,
+  extractTemporalAnswer,
 });

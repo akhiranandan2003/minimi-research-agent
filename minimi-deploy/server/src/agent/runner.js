@@ -11,6 +11,7 @@ import {
   parseToolArguments,
   validateCitationReferences,
 } from './logic.js';
+import { validateTemporalEvidence } from './evidence.js';
 
 function getWebSearchCalls(response) {
   return (response.output || []).filter(isAllowedToolCall);
@@ -24,21 +25,67 @@ function normalizedQuery(call) {
   }
 }
 
+function requiredEvidenceCitations(evidenceCheck) {
+  if (!evidenceCheck?.pair) return [];
+  return [evidenceCheck.pair.first, evidenceCheck.pair.second]
+    .filter((claim) => claim.evidenceType === 'web')
+    .map((claim) => claim.sourceCitation);
+}
+
+function persistedEvidencePair(pair) {
+  if (!pair) return null;
+  const fields = [
+    'evidenceType', 'conversationRole', 'metric', 'value', 'unit',
+    'observationPeriod', 'geography', 'population', 'scope', 'sourceCitation', 'periodLabel',
+  ];
+  const pick = (claim) => Object.fromEntries(fields.map((field) => [field, claim[field]]));
+  return { first: pick(pair.first), second: pick(pair.second) };
+}
+
 async function createFinalAnswer(client, response, instructions, model, {
   temporal = false,
   successfulTemporalSearchCount = 0,
   evidenceBackedTemporalPeriods = [],
   requiredTemporalPeriods = [],
+  structuredEvidenceRequired = false,
+  evidenceCheck = null,
 } = {}) {
   const hasPendingSearchCalls = getWebSearchCalls(response).length > 0;
   const coveredPeriods = new Set(evidenceBackedTemporalPeriods);
   const missingPeriods = requiredTemporalPeriods.filter((period) => !coveredPeriods.has(period.id));
+  const structuredEvidenceIncomplete = structuredEvidenceRequired && evidenceCheck?.verified !== true;
   const temporalEvidenceIncomplete = temporal
-    && (successfulTemporalSearchCount < 2 || missingPeriods.length > 0);
+    && (successfulTemporalSearchCount < 2 || missingPeriods.length > 0 || structuredEvidenceIncomplete);
   if (!hasPendingSearchCalls && !temporalEvidenceIncomplete) return response;
 
+  const evidenceStatus = evidenceCheck
+    ? JSON.stringify({
+      verified: evidenceCheck.verified,
+      reasons: evidenceCheck.reasons,
+      acceptedClaims: (evidenceCheck.claims || []).map((claim) => ({
+        evidenceType: claim.evidenceType,
+        metric: claim.metric,
+        value: claim.value,
+        unit: claim.unit,
+        observationPeriod: claim.observationPeriod,
+        geography: claim.geography,
+        population: claim.population,
+        scope: claim.scope,
+        sourceCitation: claim.sourceCitation,
+        periodId: claim.periodId,
+      })),
+    })
+    : 'not available';
+
   const finalInstruction = temporalEvidenceIncomplete
-    ? `Answer now using only the conversation and search evidence already provided. Exactly ${successfulTemporalSearchCount} distinct web-search queries returned usable sources. Source text mentions these requested periods: ${requiredTemporalPeriods.filter((period) => coveredPeriods.has(period.id)).map((period) => period.label).join(', ') || 'none'}. Missing source-text period mentions: ${missingPeriods.map((period) => period.label).join(', ') || 'none'}. A period mention is only a retrieval check, not proof of the observation date or comparability. Do not present a verified like-for-like comparison or calculate a change/percentage unless the actual observation periods, metric, unit, geography, population, and scope are verified from the sources. Explicitly state the evidence gap and distinguish any user-provided historical value from independently verified facts.`
+    ? 'Answer now using only the conversation and search evidence already provided. Exactly '
+      + successfulTemporalSearchCount
+      + ' distinct web-search queries returned usable sources. Source text mentions these requested periods: '
+      + (requiredTemporalPeriods.filter((period) => coveredPeriods.has(period.id)).map((period) => period.label).join(', ') || 'none')
+      + '. Missing source-text period mentions: '
+      + (missingPeriods.map((period) => period.label).join(', ') || 'none')
+      + '. Structured evidence validation: ' + evidenceStatus
+      + '. Do not present a verified like-for-like comparison or calculate a change/percentage unless both observations have grounded values and the same metric, unit, geography, population, and scope. Explicitly state the evidence gap and distinguish any user-provided historical value from independently verified facts.'
     : 'Answer now using only the conversation and search evidence already provided. Do not request another tool call. Clearly state any evidence gaps.';
 
   return client.responses.create({
@@ -55,12 +102,22 @@ async function createFinalAnswer(client, response, instructions, model, {
  * Provider adapters are injected so the orchestration can be tested without
  * credentials. Every turn must carry an authenticated, user-scoped DB client.
  */
-export function createAgentRunner({ getClient, search, getHistory, saveMessage, model }) {
+export function createAgentRunner({
+  getClient,
+  search,
+  getHistory,
+  saveMessage,
+  model,
+  extractTemporalAnswer = null,
+}) {
   for (const [name, value] of Object.entries({ getClient, search, getHistory, saveMessage })) {
-    if (typeof value !== 'function') throw new TypeError(`createAgentRunner requires ${name}().`);
+    if (typeof value !== 'function') throw new TypeError('createAgentRunner requires ' + name + '().');
   }
   if (typeof model !== 'string' || !model.trim()) {
     throw new TypeError('createAgentRunner requires a model name.');
+  }
+  if (extractTemporalAnswer !== null && typeof extractTemporalAnswer !== 'function') {
+    throw new TypeError('extractTemporalAnswer must be a function when provided.');
   }
 
   return async function runAgent({ conversationId, message, userId, supabase }) {
@@ -78,7 +135,9 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
     const instructions = [
       buildInstructions({ historical, temporal }),
       ...(temporal ? [
-        `TEMPORAL SEARCH REQUIREMENT: obtain usable source text for each requested period: ${temporalTargets.map((period) => period.label).join(' and ')}. Execute at least two distinct successful web_search queries. Make each query target one requested side explicitly by including its year or words such as historical/baseline versus latest/current; the query helps disambiguate results but is not evidence. The requested period must still appear in a returned source title or content. A single search call can provisionally cover at most one target. Never treat a source publication date as its data observation date. Use relevant stored conversation context to preserve the same metric and scope. If any period is not mentioned in source text after the search rounds, disclose the comparison is incomplete and do not calculate a trend.`,
+        'TEMPORAL SEARCH REQUIREMENT: obtain usable source text for each requested period: '
+          + temporalTargets.map((period) => period.label).join(' and ')
+          + '. Execute at least two distinct successful web_search queries. Make each query target one requested side explicitly by including its year or words such as historical/baseline versus latest/current; the query helps disambiguate results but is not evidence. The requested period must still appear in a returned source title or content. A single search call can provisionally cover at most one target. Never treat a source publication date as its data observation date. Use relevant stored conversation context to preserve the same metric and scope. If any period is not mentioned in source text after the search rounds, disclose the comparison is incomplete and do not calculate a trend.',
       ] : []),
     ].join('\n');
     const sourceState = { sources: [] };
@@ -144,7 +203,11 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
         const previousQueries = [...attemptedSearchQueries].join(' | ') || 'none';
         followUpInput.push({
           role: 'user',
-          content: `Only ${successfulTemporalSearchQueries.size} distinct web-search query or queries have returned usable sources. Source text has not yet substantiated required period(s): ${missingTemporalPeriods.map((period) => period.label).join(', ') || 'a second distinct evidence query'}. Search one missing period now. Use the original question and stored conversation to preserve the same metric, unit, geography, population, and scope. Each query must clearly target one period. Do not repeat these attempted queries: ${previousQueries}. Return a web_search call, not a prose answer.`,
+          content: 'Only ' + successfulTemporalSearchQueries.size
+            + ' distinct web-search query or queries have returned usable sources. Source text has not yet substantiated required period(s): '
+            + (missingTemporalPeriods.map((period) => period.label).join(', ') || 'a second distinct evidence query')
+            + '. Search one missing period now. Use the original question and stored conversation to preserve the same metric, unit, geography, population, and scope. Each query must clearly target one period. Do not repeat these attempted queries: '
+            + previousQueries + '. Return a web_search call, not a prose answer.',
         });
       }
 
@@ -158,21 +221,82 @@ export function createAgentRunner({ getClient, search, getHistory, saveMessage, 
       });
     }
 
-    response = await createFinalAnswer(client, response, instructions, model, {
-      temporal,
-      successfulTemporalSearchCount: successfulTemporalSearchQueries.size,
-      evidenceBackedTemporalPeriods: [...evidenceBackedTemporalPeriods],
-      requiredTemporalPeriods: temporalTargets,
-    });
-    const draftAnswer = response.output_text?.trim() || 'I could not generate a response. Please try again.';
-    const answer = validateCitationReferences(draftAnswer, sourceState.sources);
+    let answer = null;
+    let evidenceCheck = null;
+
+    if (temporal && extractTemporalAnswer) {
+      try {
+        const structured = await extractTemporalAnswer({
+          message,
+          targets: temporalTargets,
+          sources: sourceState.sources,
+          history: priorHistory,
+        });
+        evidenceCheck = validateTemporalEvidence(
+          structured.evidence,
+          sourceState.sources,
+          temporalTargets,
+          temporalReferenceDate,
+          priorHistory,
+        );
+
+        if (evidenceCheck.verified && typeof structured.answer === 'string' && structured.answer.trim()) {
+          const safeAnswer = validateCitationReferences(structured.answer, sourceState.sources);
+          const answerCitations = new Set(
+            [...safeAnswer.matchAll(/\[(\d{1,2})\]/g)].map((match) => Number(match[1])),
+          );
+          const requiredCitations = requiredEvidenceCitations(evidenceCheck);
+          const hasRequiredCitations = requiredCitations.every((citation) => answerCitations.has(citation));
+
+          if (hasRequiredCitations && !safeAnswer.includes('[citation unavailable]')) {
+            answer = safeAnswer;
+          } else {
+            evidenceCheck = {
+              ...evidenceCheck,
+              verified: false,
+              reasons: ['answer_missing_required_citations'],
+            };
+          }
+        }
+      } catch (error) {
+        console.error('[temporal_evidence]', error);
+        evidenceCheck = {
+          verified: false,
+          reasons: ['structured_evidence_extraction_unavailable'],
+          claims: [],
+          pair: null,
+        };
+      }
+    }
+
+    if (answer === null) {
+      response = await createFinalAnswer(client, response, instructions, model, {
+        temporal,
+        successfulTemporalSearchCount: successfulTemporalSearchQueries.size,
+        evidenceBackedTemporalPeriods: [...evidenceBackedTemporalPeriods],
+        requiredTemporalPeriods: temporalTargets,
+        structuredEvidenceRequired: Boolean(temporal && extractTemporalAnswer),
+        evidenceCheck,
+      });
+      const draftAnswer = response.output_text?.trim() || 'I could not generate a response. Please try again.';
+      answer = validateCitationReferences(draftAnswer, sourceState.sources);
+    }
 
     await saveMessage({
       ...dbContext,
       conversationId,
       role: 'assistant',
       content: answer,
-      metadata: { sources: sourceState.sources, historical, temporal },
+      metadata: {
+        sources: sourceState.sources,
+        historical,
+        temporal,
+        temporalEvidence: evidenceCheck ? {
+          verified: evidenceCheck.verified,
+          reasons: evidenceCheck.reasons,
+          pair: persistedEvidencePair(evidenceCheck.pair),
+        } : null,
+      },
     });
     return { answer, sources: sourceState.sources };
   };
