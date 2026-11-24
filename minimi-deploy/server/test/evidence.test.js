@@ -47,7 +47,7 @@ test('structured evidence verifies grounded values and matching comparison dimen
     claim(latestSource, { citation: 2 }),
   ], [baselineSource, latestSource], targets, referenceDate);
 
-  assert.equal(result.verified, true);
+  assert.equal(result.verified, true, JSON.stringify({ targets, result }));
   assert.deepEqual(result.reasons, []);
   assert.equal(result.pair.first.periodId, 'year:2020');
   assert.equal(result.pair.second.periodId, 'latest');
@@ -127,7 +127,7 @@ test('an exact stored user message can provide a historical baseline distinct fr
     claim(latestSource, { citation: 2 }),
   ], [latestSource], targets, referenceDate, history);
 
-  assert.equal(result.verified, true);
+  assert.equal(result.verified, true, JSON.stringify({ targets, result }));
   assert.equal(result.pair.first.evidenceType, 'conversation');
   assert.equal(result.pair.first.conversationRole, 'user');
   assert.equal(result.pair.first.sourceCitation, null);
