@@ -113,6 +113,29 @@ export function matchTemporalEvidence(sources = [], targets = [], referenceDate 
     const target = explicitTargets.find((item) => Number(item.id.slice(5)) === year);
     if (target) return hasYear(year) ? target.id : null;
   }
+
+  // A question can contain one fixed year and a relative "latest" target.
+  // A search for the latest side often contains the current observation year,
+  // which is not one of the explicit historical targets. Do not reject that
+  // query just because the other side is a named year.
+  if (explicitTargets.length) {
+    const latestTargetForExplicit = targets.find((target) => target.id === 'latest');
+    const latestFactsForExplicit = facts.filter((fact) => fact.latestEvidence);
+    if (latestTargetForExplicit && wantsLatest) {
+      return latestFactsForExplicit.length ? latestTargetForExplicit.id : null;
+    }
+    if (latestTargetForExplicit && queryYears.length) {
+      const queryMatchesLatest = queryYears.some((year) => (
+        facts.some((fact) => fact.years.includes(year) && fact.latestEvidence)
+      ));
+      if (queryMatchesLatest) return latestTargetForExplicit.id;
+      return null;
+    }
+    for (const target of explicitTargets) {
+      if (hasYear(Number(target.id.slice(5)))) return target.id;
+    }
+    return null;
+  }
   const baselineTarget = targets.find((target) => target.id === 'baseline');
   const latestTarget = targets.find((target) => target.id === 'latest');
   const latestFacts = facts.filter((fact) => fact.latestEvidence);

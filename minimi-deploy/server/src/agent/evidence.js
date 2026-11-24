@@ -242,7 +242,7 @@ export function validateTemporalAnswerNumbers(answer, pair) {
 
   const lower = answerText.toLowerCase();
   if (delta > 0 && /\b(decreas|declin|fell|drop|lower)\w*\b/.test(lower)) return false;
-  if (delta < 0 && /\b(increas|ris|grew|grow|higher)\w*\b/.test(lower)) return false;
+  if (delta < 0 && /\b(increas|ris|ros|grew|grow|higher)\w*\b/.test(lower)) return false;
   if (delta === 0 && /\b(increas|decreas|ris|fell|declin|drop)\w*\b/.test(lower)) return false;
   return true;
 }
