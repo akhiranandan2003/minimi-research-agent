@@ -11,7 +11,7 @@ import {
   parseToolArguments,
   validateCitationReferences,
 } from './logic.js';
-import { validateTemporalEvidence } from './evidence.js';
+import { validateTemporalAnswerNumbers, validateTemporalEvidence } from './evidence.js';
 
 function getWebSearchCalls(response) {
   return (response.output || []).filter(isAllowedToolCall);
@@ -240,22 +240,36 @@ export function createAgentRunner({
           priorHistory,
         );
 
-        if (evidenceCheck.verified && typeof structured.answer === 'string' && structured.answer.trim()) {
-          const safeAnswer = validateCitationReferences(structured.answer, sourceState.sources);
-          const answerCitations = new Set(
-            [...safeAnswer.matchAll(/\[(\d{1,2})\]/g)].map((match) => Number(match[1])),
-          );
-          const requiredCitations = requiredEvidenceCitations(evidenceCheck);
-          const hasRequiredCitations = requiredCitations.every((citation) => answerCitations.has(citation));
-
-          if (hasRequiredCitations && !safeAnswer.includes('[citation unavailable]')) {
-            answer = safeAnswer;
-          } else {
+        if (evidenceCheck.verified) {
+          if (typeof structured.answer !== 'string' || !structured.answer.trim()) {
             evidenceCheck = {
               ...evidenceCheck,
               verified: false,
-              reasons: ['answer_missing_required_citations'],
+              reasons: ['structured_answer_missing'],
             };
+          } else {
+            const safeAnswer = validateCitationReferences(structured.answer, sourceState.sources);
+            const answerCitations = new Set(
+              [...safeAnswer.matchAll(/\[(\d{1,2})\]/g)].map((match) => Number(match[1])),
+            );
+            const requiredCitations = requiredEvidenceCitations(evidenceCheck);
+            const hasRequiredCitations = requiredCitations.every((citation) => answerCitations.has(citation));
+            const numbersAreGrounded = validateTemporalAnswerNumbers(safeAnswer, evidenceCheck.pair);
+
+            if (hasRequiredCitations && numbersAreGrounded && !safeAnswer.includes('[citation unavailable]')) {
+              answer = safeAnswer;
+            } else {
+              const reason = !numbersAreGrounded
+                ? 'answer_contains_ungrounded_number_or_direction'
+                : safeAnswer.includes('[citation unavailable]')
+                  ? 'answer_contains_invalid_citation'
+                  : 'answer_missing_required_citations';
+              evidenceCheck = {
+                ...evidenceCheck,
+                verified: false,
+                reasons: [reason],
+              };
+            }
           }
         }
       } catch (error) {

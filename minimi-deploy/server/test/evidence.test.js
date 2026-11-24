@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createTemporalAnswerExtractor,
   TEMPORAL_ANSWER_FORMAT,
+  validateTemporalAnswerNumbers,
   validateTemporalEvidence,
 } from '../src/agent/evidence.js';
 import { extractTemporalTargets } from '../src/agent/logic.js';
@@ -55,6 +56,26 @@ test('structured evidence verifies grounded values and matching comparison dimen
   assert.equal(result.pair.second.numericValue, 3);
   assert.equal(result.pair.first.sourceCitation, 1);
   assert.equal(result.pair.second.sourceCitation, 2);
+});
+
+test('answer numbers are limited to extracted values, observation years, and derived changes', () => {
+  const result = validateTemporalEvidence([
+    claim(baselineSource, { citation: 1 }),
+    claim(latestSource, { citation: 2 }),
+  ], [baselineSource, latestSource], targets, referenceDate);
+
+  assert.equal(validateTemporalAnswerNumbers(
+    'CPI inflation moved from 2.1% in 2020 [1] to 3.0% in 2025 [2], an increase of 0.9 percentage points (42.86% relative).',
+    result.pair,
+  ), true);
+  assert.equal(validateTemporalAnswerNumbers(
+    'CPI inflation increased by 20% between 2020 and 2025 [1] [2].',
+    result.pair,
+  ), false);
+  assert.equal(validateTemporalAnswerNumbers(
+    'CPI inflation decreased by 0.9 percentage points between 2020 and 2025 [1] [2].',
+    result.pair,
+  ), false);
 });
 
 test('different units fail closed even when both periods and values are grounded', () => {

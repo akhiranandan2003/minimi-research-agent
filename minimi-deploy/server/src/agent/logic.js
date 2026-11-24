@@ -113,13 +113,6 @@ export function matchTemporalEvidence(sources = [], targets = [], referenceDate 
     const target = explicitTargets.find((item) => Number(item.id.slice(5)) === year);
     if (target) return hasYear(year) ? target.id : null;
   }
-  if (explicitTargets.length) {
-    for (const target of explicitTargets) {
-      if (hasYear(Number(target.id.slice(5)))) return target.id;
-    }
-    return null;
-  }
-
   const baselineTarget = targets.find((target) => target.id === 'baseline');
   const latestTarget = targets.find((target) => target.id === 'latest');
   const latestFacts = facts.filter((fact) => fact.latestEvidence);

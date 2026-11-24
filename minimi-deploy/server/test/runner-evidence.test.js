@@ -193,3 +193,35 @@ test('temporal runner fails closed when structured extraction is unavailable', a
     console.error = originalError;
   }
 });
+
+
+test('temporal runner rejects a numeric change that is not derived from the validated pair', async () => {
+  const fixture = createRunner({
+    responses: [
+      { id: 'baseline-search', output: [functionCall('baseline', 'official CPI inflation 2020 annual')] },
+      { id: 'latest-search', output: [functionCall('latest', 'latest CPI inflation 2025 annual')] },
+      { id: 'search-complete', output: [], output_text: 'Unverified draft: inflation changed by 20%.' },
+      { id: 'guarded-final', output: [], output_text: 'I cannot safely report a percentage change from this answer [1] [2].' },
+    ],
+    extractor: async () => ({
+      answer: 'CPI inflation increased by 20% between 2020 and 2025 [1] [2].',
+      uncertainty: null,
+      evidence: [
+        webClaim({ citation: 1, value: '2.1%', period: '2020 annual', source: baselineSource }),
+        webClaim({ citation: 2, value: '3.0%', period: '2025 annual', source: latestSource }),
+      ],
+    }),
+  });
+
+  const result = await fixture.runAgent({
+    ...userContext,
+    conversationId: 'conversation-evidence-4',
+    message: 'Compare CPI inflation in 2020 with the latest available figure.',
+  });
+
+  assert.equal(fixture.requests.length, 4);
+  assert.equal(fixture.requests[3].tool_choice, 'none');
+  assert.match(fixture.requests[3].input[0].content, /answer_contains_ungrounded_number_or_direction/);
+  assert.doesNotMatch(result.answer, /20%/);
+  assert.equal(fixture.saved[1].metadata.temporalEvidence.verified, false);
+});

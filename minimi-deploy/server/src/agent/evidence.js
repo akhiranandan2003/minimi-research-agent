@@ -189,12 +189,62 @@ function validateClaim(claim, sources, history, targets, referenceDate) {
   };
 }
 
+function comparableValue(field, value) {
+  const normalized = normalizeText(value);
+  if (field === 'unit') {
+    if (['%', 'percent', 'percentage'].includes(normalized)) return 'percent';
+    if (['pp', 'percentage point', 'percentage points'].includes(normalized)) return 'percentagepoints';
+  }
+  return compactText(value);
+}
+
 function comparablePair(first, second) {
   const fields = ['metric', 'unit', 'geography', 'population', 'scope'];
-  const mismatches = fields.filter((field) => (
-    !compactText(first[field]) || compactText(first[field]) !== compactText(second[field])
-  ));
+  const mismatches = fields.filter((field) => {
+    const firstValue = comparableValue(field, first[field]);
+    const secondValue = comparableValue(field, second[field]);
+    return !firstValue || firstValue !== secondValue;
+  });
   return { comparable: mismatches.length === 0, mismatches };
+}
+
+function addAllowedNumber(allowed, value) {
+  if (!Number.isFinite(value)) return;
+  for (const precision of [0, 1, 2, 3]) {
+    allowed.add(Number(value.toFixed(precision)));
+  }
+}
+
+export function validateTemporalAnswerNumbers(answer, pair) {
+  if (!pair?.first || !pair?.second) return false;
+  const answerText = String(answer || '').replace(/\[\d{1,2}\]/g, ' ');
+  const values = [...answerText.matchAll(/-?\d[\d,]*(?:\.\d+)?/g)]
+    .map((match) => Number(match[0].replaceAll(',', '')));
+  const allowed = new Set();
+
+  addAllowedNumber(allowed, pair.first.numericValue);
+  addAllowedNumber(allowed, pair.second.numericValue);
+  addAllowedNumber(allowed, yearFrom(pair.first.observationPeriod));
+  addAllowedNumber(allowed, yearFrom(pair.second.observationPeriod));
+
+  const delta = pair.second.numericValue - pair.first.numericValue;
+  addAllowedNumber(allowed, delta);
+  addAllowedNumber(allowed, Math.abs(delta));
+  if (pair.first.numericValue !== 0) {
+    const relative = (delta / Math.abs(pair.first.numericValue)) * 100;
+    addAllowedNumber(allowed, relative);
+    addAllowedNumber(allowed, Math.abs(relative));
+  }
+
+  if (values.some((value) => ![...allowed].some((candidate) => Math.abs(value - candidate) < 1e-9))) {
+    return false;
+  }
+
+  const lower = answerText.toLowerCase();
+  if (delta > 0 && /\b(decreas|declin|fell|drop|lower)\w*\b/.test(lower)) return false;
+  if (delta < 0 && /\b(increas|ris|grew|grow|higher)\w*\b/.test(lower)) return false;
+  if (delta === 0 && /\b(increas|decreas|ris|fell|declin|drop)\w*\b/.test(lower)) return false;
+  return true;
 }
 
 export function validateTemporalEvidence(evidence = [], sources = [], targets = [], referenceDate = new Date(), history = []) {

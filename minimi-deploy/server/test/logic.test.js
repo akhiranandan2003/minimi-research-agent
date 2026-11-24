@@ -260,3 +260,18 @@ test('stored history is mapped from actual database rows in chronological order'
     { role: 'assistant', content: 'Second' },
   ]);
 });
+
+test('an explicit historical year does not block a separate latest-period search', () => {
+  const referenceDate = new Date('2026-11-22T00:00:00Z');
+  const targets = extractTemporalTargets('Compare CPI in 2020 with the latest figure.');
+  const latestSource = {
+    title: 'Latest CPI release for 2025',
+    content: 'Latest annual CPI observations for 2025.',
+    publishedDate: '2026-10-15',
+  };
+
+  assert.equal(
+    matchTemporalEvidence([latestSource], targets, referenceDate, 'latest CPI observations 2025'),
+    'latest',
+  );
+});
