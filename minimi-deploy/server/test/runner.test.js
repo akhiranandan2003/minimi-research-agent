@@ -213,7 +213,7 @@ test('two distinct successful queries for the same baseline do not satisfy lates
   });
 
   assert.equal(requests.length, 3);
-  assert.equal(requests[2].tool_choice, 'auto');
+  assert.equal(requests[2].tool_choice, 'required');
   assert.match(requests[1].input[1].content, /Source text has not yet substantiated required period\(s\): latest\/current period/);
   assert.match(result.answer, /could not verify a like-for-like comparison/i);
   assert.match(result.answer, /latest\/current period observation/i);
@@ -287,7 +287,7 @@ test('temporal answer explicitly reports incomplete evidence when only one disti
     });
 
     assert.equal(requests.length, 2);
-    assert.equal(requests[1].tool_choice, 'auto');
+    assert.equal(requests[1].tool_choice, 'required');
     assert.match(result.answer, /could not verify a like-for-like comparison/i);
     assert.match(result.answer, /Only 1 distinct web-search query returned usable results/);
     assert.equal(result.sources.length, 1);
