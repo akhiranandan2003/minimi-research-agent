@@ -156,10 +156,9 @@ test('temporal runner refuses a like-for-like answer when extracted units differ
     message: 'Compare CPI inflation in 2020 with the latest available figure.',
   });
 
-  assert.equal(fixture.requests.length, 4);
-  assert.equal(fixture.requests[3].tool_choice, 'none');
-  assert.match(fixture.requests[3].input[0].content, /not_like_for_like:unit/);
+  assert.equal(fixture.requests.length, 3);
   assert.match(result.answer, /different units/);
+  assert.doesNotMatch(result.answer, /20%/);
   assert.equal(fixture.saved[1].metadata.temporalEvidence.verified, false);
 });
 
@@ -183,10 +182,9 @@ test('temporal runner fails closed when structured extraction is unavailable', a
       message: 'Compare CPI inflation in 2020 with the latest available figure.',
     });
 
-    assert.equal(fixture.requests.length, 4);
-    assert.equal(fixture.requests[3].tool_choice, 'none');
-    assert.match(fixture.requests[3].input[0].content, /structured_evidence_extraction_unavailable/);
-    assert.match(result.answer, /could not validate the observation values/);
+    assert.equal(fixture.requests.length, 3);
+    assert.match(result.answer, /Structured evidence validation was unavailable/);
+    assert.match(result.answer, /could not verify a like-for-like comparison/i);
     assert.doesNotMatch(result.answer, /provider details/);
     assert.equal(fixture.saved[1].metadata.temporalEvidence.verified, false);
   } finally {
@@ -219,9 +217,8 @@ test('temporal runner rejects a numeric change that is not derived from the vali
     message: 'Compare CPI inflation in 2020 with the latest available figure.',
   });
 
-  assert.equal(fixture.requests.length, 4);
-  assert.equal(fixture.requests[3].tool_choice, 'none');
-  assert.match(fixture.requests[3].input[0].content, /answer_contains_ungrounded_number_or_direction/);
+  assert.equal(fixture.requests.length, 3);
+  assert.match(result.answer, /numerical or directional claim did not pass the server-side evidence check/);
   assert.doesNotMatch(result.answer, /20%/);
   assert.equal(fixture.saved[1].metadata.temporalEvidence.verified, false);
 });
