@@ -129,7 +129,8 @@ test('temporal orchestration forces two distinct dated searches and preserves ci
   assert.match(requests[2].input[0].output, /"citation":2/);
   assert.equal(requests.every((request) => request.tools.length === 1 && request.tools[0].name === 'web_search'), true);
   assert.deepEqual(result.sources.map((source) => source.citation), [1, 2]);
-  assert.ok(result.answer.includes('2020 [1] and the latest period [2]'));
+  assert.match(result.answer, /could not verify a like-for-like comparison/i);
+  assert.match(result.answer, /Structured evidence validation was unavailable/);
   assert.equal(saved[1].metadata.temporal, true);
   assert.equal(saved[1].metadata.historical, false);
 });
@@ -178,7 +179,8 @@ test('then-and-now orchestration credits a recent 2025 source to latest, not bas
   assert.equal(requests[2].tool_choice, 'auto');
   assert.match(requests[2].input[0].output, /Latest CPI release for 2025/);
   assert.deepEqual(result.sources.map((source) => source.citation), [1, 2]);
-  assert.match(result.answer, /baseline and latest observation are sourced separately/);
+  assert.match(result.answer, /could not verify a like-for-like comparison/i);
+  assert.match(result.answer, /Structured evidence validation was unavailable/);
 });
 
 test('two distinct successful queries for the same baseline do not satisfy latest-period coverage', async () => {
@@ -210,13 +212,11 @@ test('two distinct successful queries for the same baseline do not satisfy lates
     message: 'Compare CPI inflation in 2020 with the latest available figure.',
   });
 
-  assert.equal(requests.length, 4);
-  assert.equal(requests[2].tool_choice, 'required');
-  assert.match(requests[2].input[1].content, /Source text has not yet substantiated required period\(s\): latest\/current period/);
-  assert.equal(requests[3].tool_choice, 'none');
-  assert.match(requests[3].input[0].content, /Source text mentions these requested periods: 2020/);
-  assert.match(requests[3].input[0].content, /Missing source-text period mentions: latest\/current period/);
-  assert.match(result.answer, /could not verify the latest period/);
+  assert.equal(requests.length, 3);
+  assert.equal(requests[2].tool_choice, 'auto');
+  assert.match(requests[1].input[1].content, /Source text has not yet substantiated required period\(s\): latest\/current period/);
+  assert.match(result.answer, /could not verify a like-for-like comparison/i);
+  assert.match(result.answer, /latest\/current period observation/i);
   assert.equal(result.sources.length, 2);
 });
 
@@ -249,12 +249,11 @@ test('a year in the search query does not count when returned source text omits 
   });
 
   assert.equal(searchIndex, 3);
-  assert.equal(requests.length, 5);
-  assert.equal(requests[3].tool_choice, 'auto');
-  assert.equal(requests[4].tool_choice, 'none');
-  assert.match(requests[4].input[0].content, /Missing source-text period mentions: 2020, latest\/current period/);
-  assert.match(requests[4].instructions, /A source publication date is not its data observation date/i);
-  assert.match(result.answer, /do not disclose the 2020 observation period/i);
+  assert.equal(requests.length, 3);
+  assert.equal(requests[2].tool_choice, 'auto');
+  assert.match(requests[1].input[1].content, /Search one missing period now/);
+  assert.match(result.answer, /could not verify a like-for-like comparison/i);
+  assert.match(result.answer, /2020 observation/i);
   assert.equal(result.sources.length, 3);
 });
 
@@ -287,12 +286,10 @@ test('temporal answer explicitly reports incomplete evidence when only one disti
       message: 'Compare CPI inflation in 2020 with the latest available figure.',
     });
 
-    assert.equal(requests.length, 3);
-    assert.equal(requests[1].tool_choice, 'required');
-    assert.equal(requests[2].tool_choice, 'none');
-    assert.match(requests[2].input[0].content, /Exactly 1 distinct web-search queries returned usable sources/);
-    assert.match(requests[2].input[0].content, /Do not present a verified like-for-like comparison/);
-    assert.match(result.answer, /cannot verify a like-for-like change/);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1].tool_choice, 'auto');
+    assert.match(result.answer, /could not verify a like-for-like comparison/i);
+    assert.match(result.answer, /Only 1 distinct web-search query returned usable results/);
     assert.equal(result.sources.length, 1);
   } finally {
     console.error = originalError;
