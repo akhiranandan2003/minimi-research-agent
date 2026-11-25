@@ -221,11 +221,11 @@ function numberMatchesRoundedValue(value, target) {
 }
 
 function percentUnitAppears(text) {
-  return /%|\\bpercent(?:age)?\\b(?!\\s*points?)/i.test(String(text || ''));
+  return /%|\bpercent(?:age)?\b(?!\s*points?)/i.test(String(text || ''));
 }
 
 function percentagePointsAppear(text) {
-  return /percentage[- ]points?|\\bpp\\b/i.test(String(text || ''));
+  return /percentage[- ]points?|\bpp\b/i.test(String(text || ''));
 }
 
 function unitAppears(text, unit) {
@@ -241,8 +241,8 @@ function isPercentUnit(unit) {
 
 export function validateTemporalAnswerNumbers(answer, pair) {
   if (!pair?.first || !pair?.second) return false;
-  const answerText = String(answer || '').replace(/\\[\\d{1,2}\\]/g, ' ');
-  const matches = [...answerText.matchAll(/-?\\d[\\d,]*(?:\\.\\d+)?/g)];
+  const answerText = String(answer || '').replace(/\[\d{1,2}\]/g, ' ');
+  const matches = [...answerText.matchAll(/-?\d[\d,]*(?:\.\d+)?/g)];
   const firstYear = yearFrom(pair.first.observationPeriod);
   const secondYear = yearFrom(pair.second.observationPeriod);
   const delta = pair.second.numericValue - pair.first.numericValue;
@@ -256,7 +256,7 @@ export function validateTemporalAnswerNumbers(answer, pair) {
     const before = answerText.slice(Math.max(0, match.index - 36), match.index);
     const after = answerText.slice(match.index + match[0].length, match.index + match[0].length + 48);
     const context = before + ' ' + after;
-    const isYear = /^\\d{4}$/.test(match[0])
+    const isYear = /^\d{4}$/.test(match[0])
       && (value === firstYear || value === secondYear);
     if (isYear) continue;
 
@@ -278,9 +278,9 @@ export function validateTemporalAnswerNumbers(answer, pair) {
   }
 
   const lower = answerText.toLowerCase();
-  if (delta > 0 && /\\b(decreas|declin|fell|drop|lower)\\w*\\b/.test(lower)) return false;
-  if (delta < 0 && /\\b(increas|ris|ros|grew|grow|higher)\\w*\\b/.test(lower)) return false;
-  if (delta === 0 && /\\b(increas|decreas|ris|fell|declin|drop)\\w*\\b/.test(lower)) return false;
+  if (delta > 0 && /\b(decreas|declin|fell|drop|lower)\w*\b/.test(lower)) return false;
+  if (delta < 0 && /\b(increas|ris|ros|grew|grow|higher)\w*\b/.test(lower)) return false;
+  if (delta === 0 && /\b(increas|decreas|ris|fell|declin|drop)\w*\b/.test(lower)) return false;
   return true;
 }
 
