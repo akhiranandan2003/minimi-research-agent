@@ -249,8 +249,8 @@ test('a year in the search query does not count when returned source text omits 
   });
 
   assert.equal(searchIndex, 3);
-  assert.equal(requests.length, 3);
-  assert.equal(requests[2].tool_choice, 'auto');
+  assert.equal(requests.length, 4);
+  assert.equal(requests[3].tool_choice, 'auto');
   assert.match(requests[1].input[1].content, /Search one missing period now/);
   assert.match(result.answer, /could not verify a like-for-like comparison/i);
   assert.match(result.answer, /2020 observation/i);
