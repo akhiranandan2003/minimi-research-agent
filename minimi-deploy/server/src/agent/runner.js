@@ -82,7 +82,8 @@ function buildTemporalUncertaintyAnswer({ evidenceCheck, targets, backedPeriods,
     details.push('Search results did not establish the requested ' + target.label + ' observation.');
   }
   if (successfulSearchCount < 2) {
-    details.push('Only ' + successfulSearchCount + ' distinct web-search query or queries returned usable results.');
+    const noun = successfulSearchCount === 1 ? 'query' : 'queries';
+    details.push('Only ' + successfulSearchCount + ' distinct web-search ' + noun + ' returned usable results.');
   }
   if (!details.length) {
     details.push('The available evidence does not establish both observations and matching comparison definitions.');
