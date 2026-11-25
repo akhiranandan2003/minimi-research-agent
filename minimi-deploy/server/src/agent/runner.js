@@ -42,6 +42,57 @@ function persistedEvidencePair(pair) {
   return { first: pick(pair.first), second: pick(pair.second) };
 }
 
+function buildTemporalUncertaintyAnswer({ evidenceCheck, targets, backedPeriods, successfulSearchCount }) {
+  const reasons = Array.isArray(evidenceCheck?.reasons) ? evidenceCheck.reasons : [];
+  const details = [];
+  const missing = (targets || []).filter((target) => !(backedPeriods || []).includes(target.id));
+
+  for (const reason of reasons) {
+    if (reason.startsWith('missing_grounded_evidence:')) {
+      const id = reason.slice('missing_grounded_evidence:'.length);
+      const target = (targets || []).find((item) => item.id === id);
+      details.push('I could not verify an observation for ' + (target?.label || 'one requested period') + '.');
+    } else if (reason.startsWith('not_like_for_like:')) {
+      const fields = reason.slice('not_like_for_like:'.length).split(',');
+      const labels = {
+        metric: 'different metrics',
+        unit: 'different units',
+        geography: 'different geographies',
+        population: 'different populations',
+        scope: 'different reporting scopes',
+      };
+      const mismatches = fields.map((field) => labels[field]).filter(Boolean);
+      details.push(mismatches.length
+        ? 'The available observations use ' + mismatches.join(', ') + '.'
+        : 'The sources do not establish that the observations are comparable.');
+    } else if (reason === 'structured_evidence_extraction_unavailable') {
+      details.push('Structured evidence validation was unavailable.');
+    } else if (reason === 'answer_contains_ungrounded_number_or_direction') {
+      details.push('A numerical or directional claim did not pass the server-side evidence check.');
+    } else if (reason === 'answer_missing_required_citations') {
+      details.push('The draft answer did not cite every supporting web source.');
+    } else if (reason === 'answer_contains_invalid_citation') {
+      details.push('The draft answer contained a citation that could not be verified.');
+    } else if (reason === 'structured_answer_missing') {
+      details.push('The structured research response did not contain a usable answer.');
+    }
+  }
+
+  for (const target of missing) {
+    details.push('Search results did not establish the requested ' + target.label + ' observation.');
+  }
+  if (successfulSearchCount < 2) {
+    details.push('Only ' + successfulSearchCount + ' distinct web-search query or queries returned usable results.');
+  }
+  if (!details.length) {
+    details.push('The available evidence does not establish both observations and matching comparison definitions.');
+  }
+
+  return 'I could not verify a like-for-like comparison from the available evidence, so I will not calculate a change. '
+    + [...new Set(details)].join(' ')
+    + ' The retrieved sources are listed below for review.';
+}
+
 async function createFinalAnswer(client, response, instructions, model, {
   temporal = false,
   successfulTemporalSearchCount = 0,
@@ -283,17 +334,38 @@ export function createAgentRunner({
       }
     }
 
+    if (temporal && !extractTemporalAnswer) {
+      evidenceCheck = {
+        verified: false,
+        reasons: ['structured_evidence_extraction_unavailable'],
+        claims: [],
+        pair: null,
+      };
+    }
+
     if (answer === null) {
-      response = await createFinalAnswer(client, response, instructions, model, {
-        temporal,
-        successfulTemporalSearchCount: successfulTemporalSearchQueries.size,
-        evidenceBackedTemporalPeriods: [...evidenceBackedTemporalPeriods],
-        requiredTemporalPeriods: temporalTargets,
-        structuredEvidenceRequired: Boolean(temporal && extractTemporalAnswer),
-        evidenceCheck,
-      });
-      const draftAnswer = response.output_text?.trim() || 'I could not generate a response. Please try again.';
-      answer = validateCitationReferences(draftAnswer, sourceState.sources);
+      if (temporal) {
+        // Never let an unstructured model fallback bypass the temporal evidence
+        // validator. The deterministic response cannot introduce unsupported
+        // values, directions, or citations.
+        answer = buildTemporalUncertaintyAnswer({
+          evidenceCheck,
+          targets: temporalTargets,
+          backedPeriods: [...evidenceBackedTemporalPeriods],
+          successfulSearchCount: successfulTemporalSearchQueries.size,
+        });
+      } else {
+        response = await createFinalAnswer(client, response, instructions, model, {
+          temporal,
+          successfulTemporalSearchCount: successfulTemporalSearchQueries.size,
+          evidenceBackedTemporalPeriods: [...evidenceBackedTemporalPeriods],
+          requiredTemporalPeriods: temporalTargets,
+          structuredEvidenceRequired: false,
+          evidenceCheck,
+        });
+        const draftAnswer = response.output_text?.trim() || 'I could not generate a response. Please try again.';
+        answer = validateCitationReferences(draftAnswer, sourceState.sources);
+      }
     }
 
     await saveMessage({
