@@ -215,35 +215,72 @@ function addAllowedNumber(allowed, value) {
   }
 }
 
+function numberMatchesRoundedValue(value, target) {
+  if (!Number.isFinite(value) || !Number.isFinite(target)) return false;
+  return [0, 1, 2, 3].some((precision) => Number(value.toFixed(precision)) === Number(target.toFixed(precision)));
+}
+
+function percentUnitAppears(text) {
+  return /%|\\bpercent(?:age)?\\b(?!\\s*points?)/i.test(String(text || ''));
+}
+
+function percentagePointsAppear(text) {
+  return /percentage[- ]points?|\\bpp\\b/i.test(String(text || ''));
+}
+
+function unitAppears(text, unit) {
+  const normalized = normalizeText(unit);
+  if (['%', 'percent', 'percentage'].includes(normalized)) return percentUnitAppears(text);
+  if (['pp', 'percentage point', 'percentage points'].includes(normalized)) return percentagePointsAppear(text);
+  return containsPhrase(text, unit);
+}
+
+function isPercentUnit(unit) {
+  return ['%', 'percent', 'percentage'].includes(normalizeText(unit));
+}
+
 export function validateTemporalAnswerNumbers(answer, pair) {
   if (!pair?.first || !pair?.second) return false;
-  const answerText = String(answer || '').replace(/\[\d{1,2}\]/g, ' ');
-  const values = [...answerText.matchAll(/-?\d[\d,]*(?:\.\d+)?/g)]
-    .map((match) => Number(match[0].replaceAll(',', '')));
-  const allowed = new Set();
-
-  addAllowedNumber(allowed, pair.first.numericValue);
-  addAllowedNumber(allowed, pair.second.numericValue);
-  addAllowedNumber(allowed, yearFrom(pair.first.observationPeriod));
-  addAllowedNumber(allowed, yearFrom(pair.second.observationPeriod));
-
+  const answerText = String(answer || '').replace(/\\[\\d{1,2}\\]/g, ' ');
+  const matches = [...answerText.matchAll(/-?\\d[\\d,]*(?:\\.\\d+)?/g)];
+  const firstYear = yearFrom(pair.first.observationPeriod);
+  const secondYear = yearFrom(pair.second.observationPeriod);
   const delta = pair.second.numericValue - pair.first.numericValue;
-  addAllowedNumber(allowed, delta);
-  addAllowedNumber(allowed, Math.abs(delta));
-  if (pair.first.numericValue !== 0) {
-    const relative = (delta / Math.abs(pair.first.numericValue)) * 100;
-    addAllowedNumber(allowed, relative);
-    addAllowedNumber(allowed, Math.abs(relative));
-  }
+  const relative = pair.first.numericValue !== 0
+    ? (delta / Math.abs(pair.first.numericValue)) * 100
+    : null;
+  const deltaUnit = isPercentUnit(pair.first.unit) ? 'percentage points' : pair.first.unit;
 
-  if (values.some((value) => ![...allowed].some((candidate) => Math.abs(value - candidate) < 1e-9))) {
+  for (const match of matches) {
+    const value = Number(match[0].replaceAll(',', ''));
+    const before = answerText.slice(Math.max(0, match.index - 36), match.index);
+    const after = answerText.slice(match.index + match[0].length, match.index + match[0].length + 48);
+    const context = before + ' ' + after;
+    const isYear = /^\\d{4}$/.test(match[0])
+      && (value === firstYear || value === secondYear);
+    if (isYear) continue;
+
+    const isObservationValue = [pair.first, pair.second].some((claim) => (
+      numberMatchesRoundedValue(value, claim.numericValue) && unitAppears(context, claim.unit)
+    ));
+    if (isObservationValue) continue;
+
+    const isAbsoluteDelta = numberMatchesRoundedValue(value, Math.abs(delta))
+      && unitAppears(context, deltaUnit);
+    if (isAbsoluteDelta) continue;
+
+    const isRelativeChange = relative !== null
+      && numberMatchesRoundedValue(value, Math.abs(relative))
+      && percentUnitAppears(context);
+    if (isRelativeChange) continue;
+
     return false;
   }
 
   const lower = answerText.toLowerCase();
-  if (delta > 0 && /\b(decreas|declin|fell|drop|lower)\w*\b/.test(lower)) return false;
-  if (delta < 0 && /\b(increas|ris|ros|grew|grow|higher)\w*\b/.test(lower)) return false;
-  if (delta === 0 && /\b(increas|decreas|ris|fell|declin|drop)\w*\b/.test(lower)) return false;
+  if (delta > 0 && /\\b(decreas|declin|fell|drop|lower)\\w*\\b/.test(lower)) return false;
+  if (delta < 0 && /\\b(increas|ris|ros|grew|grow|higher)\\w*\\b/.test(lower)) return false;
+  if (delta === 0 && /\\b(increas|decreas|ris|fell|declin|drop)\\w*\\b/.test(lower)) return false;
   return true;
 }
 
