@@ -107,6 +107,51 @@ test('different units fail closed even when both periods and values are grounded
   assert.equal(result.pair, null);
 });
 
+test('percent and percentage-point units are distinct during evidence extraction', () => {
+  const baselinePointsSource = {
+    ...baselineSource,
+    content: '2020 annual CPI inflation for all urban consumers in the United States was 2.1 percentage points annual average.',
+  };
+  const latestPointsSource = {
+    ...latestSource,
+    content: 'Latest 2025 annual CPI inflation for all urban consumers in the United States was 3.0 percentage points annual average.',
+  };
+
+  const mislabeledPercent = validateTemporalEvidence([
+    claim(baselinePointsSource, {
+      citation: 1,
+      unit: '%',
+      quote: baselinePointsSource.content,
+    }),
+    claim(latestPointsSource, {
+      citation: 2,
+      unit: '%',
+      period: '2025 annual',
+      quote: latestPointsSource.content,
+    }),
+  ], [baselinePointsSource, latestPointsSource], targets, referenceDate);
+
+  assert.equal(mislabeledPercent.verified, false);
+  assert.ok(mislabeledPercent.reasons.includes('missing_grounded_evidence:year:2020'));
+
+  const correctlyLabeledPoints = validateTemporalEvidence([
+    claim(baselinePointsSource, {
+      citation: 1,
+      unit: 'percentage points',
+      quote: baselinePointsSource.content,
+    }),
+    claim(latestPointsSource, {
+      citation: 2,
+      unit: 'percentage points',
+      period: '2025 annual',
+      quote: latestPointsSource.content,
+    }),
+  ], [baselinePointsSource, latestPointsSource], targets, referenceDate);
+
+  assert.equal(correctlyLabeledPoints.verified, true);
+  assert.equal(correctlyLabeledPoints.pair.first.unit, 'percentage points');
+});
+
 test('fabricated evidence quotes and values are rejected', () => {
   const fabricated = claim(baselineSource, {
     citation: 1,
