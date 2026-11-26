@@ -223,9 +223,9 @@ function numberMatchesRoundedValue(value, target) {
 }
 
 function percentUnitAppears(text) {
-  return /%|\bpercent(?:age)?\b(?!\s*points?)/i.test(String(text || ''));
+  // Exclude both spaced and hyphenated "percentage point(s)" forms.
+  return /%|\\bpercent(?:age)?\\b(?![-\\s]*points?)/i.test(String(text || ''));
 }
-
 function percentagePointsAppear(text) {
   return /percentage[- ]points?|\bpp\b/i.test(String(text || ''));
 }
