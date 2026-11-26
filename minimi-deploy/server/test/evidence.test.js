@@ -81,6 +81,14 @@ test('answer numbers are limited to extracted values, observation years, and der
     result.pair,
   ), false);
   assert.equal(validateTemporalAnswerNumbers(
+    'CPI inflation increased by 42.86 percentage-points between 2020 and 2025 [1] [2].',
+    result.pair,
+  ), false);
+  assert.equal(validateTemporalAnswerNumbers(
+    'CPI inflation increased by 0.9 percentage-point between 2020 and 2025 [1] [2].',
+    result.pair,
+  ), true);
+  assert.equal(validateTemporalAnswerNumbers(
     'CPI inflation increased by 0.9% between 2020 and 2025 [1] [2].',
     result.pair,
   ), false);
