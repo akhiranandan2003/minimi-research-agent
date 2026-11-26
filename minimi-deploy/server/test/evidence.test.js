@@ -110,11 +110,11 @@ test('different units fail closed even when both periods and values are grounded
 test('percent and percentage-point units are distinct during evidence extraction', () => {
   const baselinePointsSource = {
     ...baselineSource,
-    content: '2020 annual CPI inflation for all urban consumers in the United States was 2.1 percentage points annual average.',
+    content: '2020 annual CPI inflation for all urban consumers in the United States was 2.1 percentage-point annual average.',
   };
   const latestPointsSource = {
     ...latestSource,
-    content: 'Latest 2025 annual CPI inflation for all urban consumers in the United States was 3.0 percentage points annual average.',
+    content: 'Latest 2025 annual CPI inflation for all urban consumers in the United States was 3.0 pp annual average.',
   };
 
   const mislabeledPercent = validateTemporalEvidence([
