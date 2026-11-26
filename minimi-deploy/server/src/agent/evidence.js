@@ -55,6 +55,7 @@ export const TEMPORAL_ANSWER_INSTRUCTIONS = [
   'For every evidence item, copy one short, exact evidence_quote from the supplied source text or one exact stored conversation message. The quote must contain the observation period, value, metric, unit, geography, population, and scope. Do not paraphrase the quote.',
   'For web evidence, set evidence_type to web and source_citation to the supplied integer citation. For stored conversation evidence, set evidence_type to conversation and source_citation to null. Never create a citation.',
   'Use null for every field that is not explicitly supported. A missing population or scope means comparability is not established.',
+  'Treat percent (%) and percentage points (pp) as different units. Never label a percentage-point value as a percent or vice versa.',
   'A source publication date is not an observation date. observation_period must describe when the value was measured, not when the page was published.',
   'The answer must distinguish values the user previously stated from claims in prior assistant messages and independently sourced facts. Cite every web-supported factual claim with the supplied [citation] number.',
   'Only describe a comparison as like-for-like when both periods have the same metric, unit, geography, population, and scope. If the supplied evidence cannot establish that, state the missing information and do not calculate a change.',
@@ -75,11 +76,12 @@ function containsPhrase(haystack, needle) {
 
 function containsUnit(text, unit) {
   const value = normalizeText(unit);
-  if (value === '%') return /%|percent(?:age)?/i.test(String(text || ''));
-  if (value === 'pp' || value === 'percentage points') return /percentage points?|\bpp\b/i.test(String(text || ''));
+  // Keep percent (%) distinct from percentage points (pp) at extraction time,
+  // not only when validating the final answer.
+  if (value === '%') return percentUnitAppears(text);
+  if (value === 'pp' || value === 'percentage points') return percentagePointsAppear(text);
   return containsPhrase(text, unit);
 }
-
 function numericValue(value) {
   const match = String(value ?? '').match(/-?\d[\d,]*(?:\.\d+)?/);
   if (!match) return null;
