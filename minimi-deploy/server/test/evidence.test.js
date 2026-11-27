@@ -160,6 +160,56 @@ test('percent and percentage-point units are distinct during evidence extraction
   assert.equal(correctlyLabeledPoints.pair.first.unit, 'percentage points');
 });
 
+test('unit evidence must be attached to the exact claimed numeric value', () => {
+  const mixedUnitSource = {
+    ...baselineSource,
+    content: '2020 annual CPI inflation for all urban consumers in the United States was 2.1 percentage points, while a separate reference rate was 3.0% annual average.',
+  };
+
+  const mislabeledPercent = validateTemporalEvidence([
+    claim(mixedUnitSource, {
+      citation: 1,
+      value: '2.1',
+      unit: '%',
+      quote: mixedUnitSource.content,
+    }),
+    claim(latestSource, { citation: 2 }),
+  ], [mixedUnitSource, latestSource], targets, referenceDate);
+
+  assert.equal(mislabeledPercent.verified, false);
+  assert.ok(mislabeledPercent.reasons.includes('missing_grounded_evidence:year:2020'));
+
+  const correctlyLabeledPoints = validateTemporalEvidence([
+    claim(mixedUnitSource, {
+      citation: 1,
+      value: '2.1',
+      unit: 'percentage points',
+      quote: mixedUnitSource.content,
+    }),
+    claim(latestSource, { citation: 2 }),
+  ], [mixedUnitSource, latestSource], targets, referenceDate);
+
+  assert.equal(correctlyLabeledPoints.claims.length, 2);
+  assert.deepEqual(correctlyLabeledPoints.reasons, ['not_like_for_like:unit']);
+});
+
+test('final-answer unit checks do not borrow a nearby number unit', () => {
+  const result = validateTemporalEvidence([
+    claim(baselineSource, { citation: 1 }),
+    claim(latestSource, { citation: 2 }),
+  ], [baselineSource, latestSource], targets, referenceDate);
+
+  assert.equal(result.verified, true);
+  assert.equal(validateTemporalAnswerNumbers(
+    'CPI inflation was 2.1 percentage points in 2020 [1] and 3.0% in 2025 [2].',
+    result.pair,
+  ), false);
+  assert.equal(validateTemporalAnswerNumbers(
+    'CPI inflation was 2.1% in 2020 [1] and 3.0% in 2025 [2], a 0.9 percentage-point increase.',
+    result.pair,
+  ), true);
+});
+
 test('fabricated evidence quotes and values are rejected', () => {
   const fabricated = claim(baselineSource, {
     citation: 1,
