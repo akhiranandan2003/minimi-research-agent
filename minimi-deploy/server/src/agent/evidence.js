@@ -74,14 +74,59 @@ function containsPhrase(haystack, needle) {
   return Boolean(normalizedNeedle) && normalizeText(haystack).includes(normalizedNeedle);
 }
 
-function containsUnit(text, unit) {
-  const value = normalizeText(unit);
-  // Keep percent (%) distinct from percentage points (pp) at extraction time,
-  // not only when validating the final answer.
-  if (value === '%') return percentUnitAppears(text);
-  if (value === 'pp' || value === 'percentage points') return percentagePointsAppear(text);
-  return containsPhrase(text, unit);
+function normalizeUnitContext(value) {
+  return normalizeText(value).replace(/[-\\s]+/g, ' ').trim();
 }
+
+function unitKind(unit) {
+  const value = normalizeText(unit);
+  if (['%', 'percent', 'percentage'].includes(value)) return 'percent';
+  if (['pp', 'percentage point', 'percentage points'].includes(value)) return 'percentage-points';
+  return 'other';
+}
+
+/**
+ * A unit must belong to the claimed number, not merely occur somewhere in the
+ * same quote or sentence. This prevents a nearby 3.0% from validating a
+ * separate 2.1 percentage-point value as 2.1%.
+ */
+function unitAttachedToValue(text, unit, expectedValue) {
+  const target = numericValue(expectedValue);
+  if (target === null) return false;
+  const source = String(text || '');
+  const kind = unitKind(unit);
+  const normalizedUnit = normalizeUnitContext(unit);
+
+  for (const match of source.matchAll(/-?\\d[\\d,]*(?:\\.\\d+)?/g)) {
+    if (Number(match[0].replaceAll(',', '')) !== target) continue;
+    const end = match.index + match[0].length;
+    const suffix = source.slice(end, end + 40).trimStart();
+
+    if (kind === 'percent' && (
+      suffix.startsWith('%') || /^percent(?:age)?\\b(?![-\\s]*points?)/i.test(suffix)
+    )) return true;
+
+    if (kind === 'percentage-points' && (
+      /^pp\\b/i.test(suffix) || /^percentage[-\\s]+points?\\b/i.test(suffix)
+    )) return true;
+
+    if (kind === 'other') {
+      const normalizedSuffix = normalizeUnitContext(suffix);
+      if (normalizedSuffix.startsWith(normalizedUnit)
+        && !/[a-z]/i.test(normalizedSuffix[normalizedUnit.length] || '')) return true;
+
+      const prefix = normalizeUnitContext(source.slice(Math.max(0, match.index - 40), match.index));
+      if (prefix.endsWith(normalizedUnit)
+        && !/[a-z]/i.test(prefix[prefix.length - normalizedUnit.length - 1] || '')) return true;
+    }
+  }
+  return false;
+}
+
+function containsUnit(text, unit, expectedValue) {
+  return unitAttachedToValue(text, unit, expectedValue);
+}
+
 function numericValue(value) {
   const match = String(value ?? '').match(/-?\d[\d,]*(?:\.\d+)?/);
   if (!match) return null;
@@ -160,7 +205,7 @@ function validateClaim(claim, sources, history, targets, referenceDate) {
   const fields = ['metric', 'value', 'unit', 'observation_period', 'geography', 'population', 'scope'];
   if (fields.some((field) => typeof claim[field] !== 'string' || !claim[field].trim())) return null;
   if (!containsPhrase(quote, claim.metric)) return null;
-  if (!containsUnit(quote, claim.unit)) return null;
+  if (!containsUnit(quote, claim.unit, claim.value)) return null;
   if (!containsPhrase(quote, claim.observation_period)) return null;
   if (!containsPhrase(quote, claim.geography)) return null;
   if (!containsPhrase(quote, claim.population)) return null;
@@ -222,19 +267,8 @@ function numberMatchesRoundedValue(value, target) {
   return [0, 1, 2, 3].some((precision) => Number(value.toFixed(precision)) === Number(target.toFixed(precision)));
 }
 
-function percentUnitAppears(text) {
-  // Exclude both spaced and hyphenated "percentage point(s)" forms.
-  return /%|\bpercent(?:age)?\b(?![-\s]*points?)/i.test(String(text || ''));
-}
-function percentagePointsAppear(text) {
-  return /percentage[- ]points?|\bpp\b/i.test(String(text || ''));
-}
-
-function unitAppears(text, unit) {
-  const normalized = normalizeText(unit);
-  if (['%', 'percent', 'percentage'].includes(normalized)) return percentUnitAppears(text);
-  if (['pp', 'percentage point', 'percentage points'].includes(normalized)) return percentagePointsAppear(text);
-  return containsPhrase(text, unit);
+function unitAppears(text, unit, expectedValue) {
+  return unitAttachedToValue(text, unit, expectedValue);
 }
 
 function isPercentUnit(unit) {
@@ -263,17 +297,17 @@ export function validateTemporalAnswerNumbers(answer, pair) {
     if (isYear) continue;
 
     const isObservationValue = [pair.first, pair.second].some((claim) => (
-      numberMatchesRoundedValue(value, claim.numericValue) && unitAppears(context, claim.unit)
+      numberMatchesRoundedValue(value, claim.numericValue) && unitAppears(context, claim.unit, value)
     ));
     if (isObservationValue) continue;
 
     const isAbsoluteDelta = numberMatchesRoundedValue(value, Math.abs(delta))
-      && unitAppears(context, deltaUnit);
+      && unitAppears(context, deltaUnit, value);
     if (isAbsoluteDelta) continue;
 
     const isRelativeChange = relative !== null
       && numberMatchesRoundedValue(value, Math.abs(relative))
-      && percentUnitAppears(context);
+      && unitAppears(context, '%', value);
     if (isRelativeChange) continue;
 
     return false;
