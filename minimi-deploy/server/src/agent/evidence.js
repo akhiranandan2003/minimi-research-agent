@@ -75,7 +75,7 @@ function containsPhrase(haystack, needle) {
 }
 
 function normalizeUnitContext(value) {
-  return normalizeText(value).replace(/[-\\s]+/g, ' ').trim();
+  return normalizeText(value).replace(/[-\s]+/g, ' ').trim();
 }
 
 function unitKind(unit) {
@@ -97,17 +97,17 @@ function unitAttachedToValue(text, unit, expectedValue) {
   const kind = unitKind(unit);
   const normalizedUnit = normalizeUnitContext(unit);
 
-  for (const match of source.matchAll(/-?\\d[\\d,]*(?:\\.\\d+)?/g)) {
+  for (const match of source.matchAll(/-?\d[\d,]*(?:\.\d+)?/g)) {
     if (Number(match[0].replaceAll(',', '')) !== target) continue;
     const end = match.index + match[0].length;
     const suffix = source.slice(end, end + 40).trimStart();
 
     if (kind === 'percent' && (
-      suffix.startsWith('%') || /^percent(?:age)?\\b(?![-\\s]*points?)/i.test(suffix)
+      suffix.startsWith('%') || /^percent(?:age)?\b(?![-\s]*points?)/i.test(suffix)
     )) return true;
 
     if (kind === 'percentage-points' && (
-      /^pp\\b/i.test(suffix) || /^percentage[-\\s]+points?\\b/i.test(suffix)
+      /^pp\b/i.test(suffix) || /^percentage[-\s]+points?\b/i.test(suffix)
     )) return true;
 
     if (kind === 'other') {
