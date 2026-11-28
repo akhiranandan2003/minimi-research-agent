@@ -273,8 +273,22 @@ function numberMatchesRoundedValue(value, target, precision) {
   return Number(value.toFixed(safePrecision)) === Number(target.toFixed(safePrecision));
 }
 
-function unitAppears(text, unit, expectedValue) {
-  return unitAttachedToValue(text, unit, expectedValue);
+function unitAppears(textAfterValue, unit) {
+  const suffix = String(textAfterValue ?? '').trimStart();
+  const kind = unitKind(unit);
+
+  if (kind === 'percent') {
+    return suffix.startsWith('%') || /^percent(?:age)?\\b(?![-\\s]*points?)/i.test(suffix);
+  }
+  if (kind === 'percentage-points') {
+    return /^pp\\b/i.test(suffix) || /^percentage[-\\s]+points?\\b/i.test(suffix);
+  }
+
+  const normalizedUnit = normalizeUnitContext(unit);
+  const normalizedSuffix = normalizeUnitContext(suffix);
+  return Boolean(normalizedUnit)
+    && normalizedSuffix.startsWith(normalizedUnit)
+    && !/[a-z]/i.test(normalizedSuffix[normalizedUnit.length] || '');
 }
 
 function isPercentUnit(unit) {
@@ -296,25 +310,23 @@ export function validateTemporalAnswerNumbers(answer, pair) {
 
   for (const match of matches) {
     const value = Number(match[0].replaceAll(',', ''));
-    const before = answerText.slice(Math.max(0, match.index - 36), match.index);
     const after = answerText.slice(match.index + match[0].length, match.index + match[0].length + 48);
-    const context = before + ' ' + after;
     const isYear = /^\d{4}$/.test(match[0])
       && (value === firstYear || value === secondYear);
     if (isYear) continue;
 
     const isObservationValue = [pair.first, pair.second].some((claim) => (
-      numberMatchesRoundedValue(value, claim.numericValue, decimalPlaces(claim.value)) && unitAppears(context, claim.unit, value)
+      numberMatchesRoundedValue(value, claim.numericValue, decimalPlaces(claim.value)) && unitAppears(after, claim.unit)
     ));
     if (isObservationValue) continue;
 
     const isAbsoluteDelta = numberMatchesRoundedValue(value, Math.abs(delta), deltaPrecision)
-      && unitAppears(context, deltaUnit, value);
+      && unitAppears(after, deltaUnit);
     if (isAbsoluteDelta) continue;
 
     const isRelativeChange = relative !== null
       && numberMatchesRoundedValue(value, Math.abs(relative), Math.min(2, decimalPlaces(match[0])))
-      && unitAppears(context, '%', value);
+      && unitAppears(after, '%');
     if (isRelativeChange) continue;
 
     return false;
