@@ -263,7 +263,7 @@ function addAllowedNumber(allowed, value) {
 }
 
 function decimalPlaces(value) {
-  const match = String(value ?? '').replaceAll(',', '').match(/\\.(\\d+)/);
+  const match = String(value ?? '').replaceAll(',', '').match(/\.(\d+)/);
   return match ? match[1].length : 0;
 }
 
