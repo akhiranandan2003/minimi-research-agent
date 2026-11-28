@@ -262,9 +262,15 @@ function addAllowedNumber(allowed, value) {
   }
 }
 
-function numberMatchesRoundedValue(value, target) {
+function decimalPlaces(value) {
+  const match = String(value ?? '').replaceAll(',', '').match(/\\.(\\d+)/);
+  return match ? match[1].length : 0;
+}
+
+function numberMatchesRoundedValue(value, target, precision) {
   if (!Number.isFinite(value) || !Number.isFinite(target)) return false;
-  return [0, 1, 2, 3].some((precision) => Number(value.toFixed(precision)) === Number(target.toFixed(precision)));
+  const safePrecision = Math.max(0, Math.min(6, precision));
+  return Number(value.toFixed(safePrecision)) === Number(target.toFixed(safePrecision));
 }
 
 function unitAppears(text, unit, expectedValue) {
@@ -286,6 +292,7 @@ export function validateTemporalAnswerNumbers(answer, pair) {
     ? (delta / Math.abs(pair.first.numericValue)) * 100
     : null;
   const deltaUnit = isPercentUnit(pair.first.unit) ? 'percentage points' : pair.first.unit;
+  const deltaPrecision = Math.max(decimalPlaces(pair.first.value), decimalPlaces(pair.second.value));
 
   for (const match of matches) {
     const value = Number(match[0].replaceAll(',', ''));
@@ -297,16 +304,16 @@ export function validateTemporalAnswerNumbers(answer, pair) {
     if (isYear) continue;
 
     const isObservationValue = [pair.first, pair.second].some((claim) => (
-      numberMatchesRoundedValue(value, claim.numericValue) && unitAppears(context, claim.unit, value)
+      numberMatchesRoundedValue(value, claim.numericValue, decimalPlaces(claim.value)) && unitAppears(context, claim.unit, value)
     ));
     if (isObservationValue) continue;
 
-    const isAbsoluteDelta = numberMatchesRoundedValue(value, Math.abs(delta))
+    const isAbsoluteDelta = numberMatchesRoundedValue(value, Math.abs(delta), deltaPrecision)
       && unitAppears(context, deltaUnit, value);
     if (isAbsoluteDelta) continue;
 
     const isRelativeChange = relative !== null
-      && numberMatchesRoundedValue(value, Math.abs(relative))
+      && numberMatchesRoundedValue(value, Math.abs(relative), Math.min(2, decimalPlaces(match[0])))
       && unitAppears(context, '%', value);
     if (isRelativeChange) continue;
 
