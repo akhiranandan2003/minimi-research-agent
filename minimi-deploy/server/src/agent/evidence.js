@@ -278,10 +278,10 @@ function unitAppears(textAfterValue, unit) {
   const kind = unitKind(unit);
 
   if (kind === 'percent') {
-    return suffix.startsWith('%') || /^percent(?:age)?\\b(?![-\\s]*points?)/i.test(suffix);
+    return suffix.startsWith('%') || /^percent(?:age)?\b(?![-\s]*points?)/i.test(suffix);
   }
   if (kind === 'percentage-points') {
-    return /^pp\\b/i.test(suffix) || /^percentage[-\\s]+points?\\b/i.test(suffix);
+    return /^pp\b/i.test(suffix) || /^percentage[-\s]+points?\b/i.test(suffix);
   }
 
   const normalizedUnit = normalizeUnitContext(unit);
