@@ -73,6 +73,22 @@ test('answer numbers are limited to extracted values, observation years, and der
     result.pair,
   ), false);
   assert.equal(validateTemporalAnswerNumbers(
+    'CPI inflation was 2.4% in 2020 [1] and 3.0% in 2025 [2].',
+    result.pair,
+  ), false);
+  assert.equal(validateTemporalAnswerNumbers(
+    'CPI inflation was 2.1% in 2020 [1] and 3.4% in 2025 [2].',
+    result.pair,
+  ), false);
+  assert.equal(validateTemporalAnswerNumbers(
+    'CPI inflation increased by 1.4 percentage points between 2020 and 2025 [1] [2].',
+    result.pair,
+  ), false);
+  assert.equal(validateTemporalAnswerNumbers(
+    'CPI inflation was 2.10% in 2020 [1] and 3.00% in 2025 [2], a 0.90 pp increase (42.86% relative).',
+    result.pair,
+  ), true);
+  assert.equal(validateTemporalAnswerNumbers(
     'CPI inflation decreased by 0.9 percentage points between 2020 and 2025 [1] [2].',
     result.pair,
   ), false);
